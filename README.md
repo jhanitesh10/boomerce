@@ -1,4 +1,4 @@
-# Gridmerce - Start
+# Bloomerce - Start
 
 This is a clean boilerplate project using:
 - **Frontend**: React + Vite

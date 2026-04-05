@@ -82,3 +82,7 @@ class SkuMaster(SkuMasterBase):
 
     class Config:
         from_attributes = True
+
+class PlatformPatch(BaseModel):
+    action: str  
+    reference_id: int
