@@ -1,0 +1,26 @@
+:root {
+  --bg-color: #f9fafb;
+  --text-color: #111827;
+  --header-bg: #ffffff;
+  --border-color: #e5e7eb;
+}
+
+[data-theme="dark"] {
+  --bg-color: #111827;
+  --text-color: #f9fafb;
+  --header-bg: #1f2937;
+  --border-color: #374151;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: system-ui, -apple-system, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+* {
+  box-sizing: border-box;
+}
