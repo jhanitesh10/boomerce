@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import api from './api';
+import MasterTab from './components/MasterTab';
 import './App.css';
 
 function App() {
-  const [status, setStatus] = useState("Checking backend...");
   const [theme, setTheme] = useState('light');
+  const [activeTab, setActiveTab] = useState('master');
 
-  // Automatically detect system preference or load saved theme
   useEffect(() => {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const savedTheme = localStorage.getItem('bloomerce-theme');
@@ -18,7 +17,6 @@ function App() {
     }
   }, []);
 
-  // Apply theme to document
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('bloomerce-theme', theme);
@@ -28,26 +26,44 @@ function App() {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
-  useEffect(() => {
-    api.get('/status')
-      .then(res => setStatus(res.data.message))
-      .catch(err => setStatus("Backend not reachable."));
-  }, []);
-
   return (
     <div className="app-container">
-      <header className="header">
+      <header className="header flex-row-between">
         <div className="brand-section">
-          <img src="/boomerce_logo.svg" alt="Bloomerce" className="brand-logo" />
+          <img src="/boomerce_logo.svg" alt="Bloomerce" className="brand-logo-img" />
           <h1 className="brand-title">Bloomerce</h1>
         </div>
+        
+        <nav className="header-nav flex gap-6 px-8">
+          <button 
+            className={`nav-link ${activeTab === 'master' ? 'active' : ''}`}
+            onClick={() => setActiveTab('master')}
+          >
+            Product Master
+          </button>
+          <button 
+            className={`nav-link ${activeTab === 'pricing' ? 'active' : ''}`}
+            onClick={() => setActiveTab('pricing')}
+          >
+            Pricing & Offers
+          </button>
+          <button 
+            className={`nav-link ${activeTab === 'inventory' ? 'active' : ''}`}
+            onClick={() => setActiveTab('inventory')}
+          >
+            Inventory Management
+          </button>
+        </nav>
+
         <button className="theme-toggle" onClick={toggleTheme}>
-          {theme === 'light' ? '🌙 Night Mode' : '☀️ Day Mode'}
+          {theme === 'light' ? '🌙 Night' : '☀️ Day'}
         </button>
       </header>
       
-      <main className="content">
-        <p>System Status: <strong>{status}</strong></p>
+      <main className="main-content">
+        {activeTab === 'master' && <MasterTab />}
+        {activeTab === 'pricing' && <div className="card p-8 text-center text-gray-500">Pricing Module Coming Soon</div>}
+        {activeTab === 'inventory' && <div className="card p-8 text-center text-gray-500">Inventory Module Coming Soon</div>}
       </main>
     </div>
   );
