@@ -2,6 +2,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
+from dotenv import load_dotenv
+
+load_dotenv() # Load variables from .env if present
 
 # Default to local sqlite for development if docker is not running.
 # To use MySQL, set DATABASE_URL="mysql+pymysql://user:userpassword@127.0.0.1:3306/bloomerce_db"
