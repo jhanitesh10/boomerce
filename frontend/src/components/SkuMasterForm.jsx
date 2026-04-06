@@ -4,7 +4,7 @@ import { skuApi, uploadApi } from '../api';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
-  X, Save, UploadCloud, RefreshCw, Trash2,
+  X, Save, UploadCloud, RefreshCw, Trash2, Link, ArrowLeft,
   Package, Tag, FileText, BarChart2, Layers, Info, StickyNote,
   AlertCircle
 } from 'lucide-react';
@@ -34,10 +34,29 @@ function AutoTextarea({ name, value, onChange, placeholder, rows = 2, className 
   );
 }
 
-// ─── Image uploader ───────────────────────────────────────────────
+// ─── Helper to resolve Google Drive links ────────────────────────
+const getDirectImageUrl = (url) => {
+  if (!url) return '';
+  // Support Google Drive view links
+  // Format: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+  const gdMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) || 
+                  url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+  if (gdMatch && gdMatch[1]) {
+    return `https://lh3.googleusercontent.com/d/${gdMatch[1]}`;
+  }
+  return url;
+};
+
+// ─── Image uploader with URL support ──────────────────────────────
 function ImageBlock({ value, onChange }) {
   const [uploading, setUploading] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
   const fileRef = useRef(null);
+  const [tempUrl, setTempUrl] = useState(value || '');
+
+  useEffect(() => {
+    setTempUrl(value || '');
+  }, [value]);
 
   const handleFile = async (e) => {
     const file = e.target.files[0];
@@ -46,6 +65,7 @@ function ImageBlock({ value, onChange }) {
     try {
       const res = await uploadApi.uploadImage(file);
       onChange(res.url);
+      setShowOptions(false);
     } catch {
       alert('Upload failed. Try again.');
     } finally {
@@ -54,51 +74,124 @@ function ImageBlock({ value, onChange }) {
     }
   };
 
+  const applyUrl = () => {
+    if (!tempUrl.trim()) return;
+    const resolved = getDirectImageUrl(tempUrl.trim());
+    onChange(resolved);
+    setShowOptions(false);
+  };
+
+  const handleUrlBlur = () => {
+    if (tempUrl.trim() && tempUrl.trim() !== value) {
+      applyUrl();
+    }
+  };
+
+  const isAddingOrReplacing = !value || showOptions;
+
   return (
-    <div className="mb-5">
+    <div className="mb-6">
       <input type="file" accept="image/*" ref={fileRef} className="hidden" onChange={handleFile} />
-      {value ? (
-        <div className="relative group rounded-xl overflow-hidden border border-[var(--color-border)] bg-[var(--color-muted)]">
-          <img src={value} alt="Product" className="w-full h-48 object-contain" />
-          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-1.5 bg-white text-slate-800 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
-            >
-              <RefreshCw size={13} /> Replace
-            </button>
-            <button
-              type="button"
-              onClick={() => onChange('')}
-              className="flex items-center gap-1.5 bg-red-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-red-600 transition-colors"
-            >
-              <Trash2 size={13} /> Remove
-            </button>
-          </div>
-          {uploading && (
-            <div className="absolute inset-0 bg-white/70 flex items-center justify-center text-sm font-medium text-[var(--color-muted-foreground)]">
-              Uploading…
+      
+      <div className="relative group rounded-2xl overflow-hidden border border-[var(--color-border)] bg-[var(--color-muted)]/30 transition-all hover:bg-[var(--color-muted)]/50 min-h-[120px] flex flex-col">
+        {!isAddingOrReplacing ? (
+          <div className="relative h-48 bg-white flex items-center justify-center p-4">
+            <img 
+              src={value} 
+              alt="Product Preview" 
+              className="max-w-full max-h-full object-contain drop-shadow-sm rounded-lg"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.nextSibling.style.display = 'flex';
+              }}
+            />
+            {/* Fallback if image fails to load */}
+            <div className="hidden absolute inset-0 flex flex-col items-center justify-center text-red-500 gap-2">
+              <AlertCircle size={24} />
+              <span className="text-[10px] uppercase font-bold tracking-wider">Invalid Image URL</span>
             </div>
-          )}
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => !uploading && fileRef.current?.click()}
-          className={cn(
-            "w-full flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-[var(--color-border)] py-10 px-6 text-center transition-all cursor-pointer",
-            "hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5",
-            uploading && "opacity-60 cursor-not-allowed"
-          )}
-        >
-          <UploadCloud size={28} className="text-[var(--color-muted-foreground)]" />
-          <span className="text-sm font-medium text-[var(--color-foreground)]">
-            {uploading ? 'Uploading…' : 'Click to upload primary image'}
-          </span>
-          <span className="text-xs text-[var(--color-muted-foreground)]">JPG, PNG, WEBP — recommended 800×800px</span>
-        </button>
-      )}
+            
+            <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center gap-3 backdrop-blur-[2px]">
+              <button
+                type="button"
+                onClick={() => setShowOptions(true)}
+                className="flex items-center gap-2 bg-white text-slate-800 text-xs font-semibold px-4 py-2 rounded-xl hover:bg-slate-50 transition-all active:scale-95 shadow-sm"
+              >
+                <RefreshCw size={14} /> Replace Options
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange('')}
+                className="flex items-center gap-2 bg-red-500 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-red-600 transition-all active:scale-95 shadow-sm"
+              >
+                <Trash2 size={14} /> Remove
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="relative flex flex-col md:flex-row items-center gap-6 p-6 animate-[fade-in_0.2s_ease]">
+             {value && (
+               <button 
+                 type="button"
+                 onClick={() => setShowOptions(false)}
+                 className="absolute top-4 left-4 p-1.5 rounded-lg text-[var(--color-muted-foreground)] hover:bg-white hover:text-[var(--color-foreground)] transition-colors shadow-sm bg-white/50 border border-[var(--color-border)]"
+                 title="Back to Preview"
+               >
+                 <ArrowLeft size={14} />
+               </button>
+             )}
+
+             <div 
+               onClick={() => !uploading && fileRef.current?.click()}
+               className={cn(
+                 "w-full md:w-1/3 aspect-square max-w-[140px] flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--color-border)] bg-white cursor-pointer transition-all",
+                 "hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5 active:scale-[0.98]",
+                 uploading && "opacity-60 cursor-not-allowed"
+               )}
+             >
+                {uploading ? (
+                   <span className="w-8 h-8 rounded-full border-2 border-[var(--color-primary)] border-t-transparent animate-spin" />
+                ) : (
+                   <>
+                     <UploadCloud size={32} className="text-[var(--color-muted-foreground)] group-hover:text-[var(--color-primary)] transition-colors" />
+                     <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-muted-foreground)]">Upload</span>
+                   </>
+                )}
+             </div>
+
+             <div className="flex-1 w-full space-y-3">
+                <div className="flex flex-col gap-1.5">
+                   <span className="text-xs font-semibold text-[var(--color-foreground)]">Public Image or Drive URL</span>
+                   <div className="relative group/input">
+                      <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-[var(--color-muted-foreground)] group-focus-within/input:text-[var(--color-primary)] transition-colors">
+                        <Link size={14} />
+                      </div>
+                      <input 
+                        type="url"
+                        value={tempUrl}
+                        onChange={(e) => setTempUrl(e.target.value)}
+                        onBlur={handleUrlBlur}
+                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), applyUrl())}
+                        placeholder="Paste image link here..."
+                        className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-[var(--color-border)] bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:border-[var(--color-primary)] transition-all placeholder:text-[var(--color-muted-foreground)]/60"
+                      />
+                   </div>
+                   <p className="text-[10px] text-[var(--color-muted-foreground)] leading-relaxed italic">
+                     Google Drive "view" links are auto-converted to direct image streams for preview.
+                   </p>
+                </div>
+             </div>
+          </div>
+        )}
+        {uploading && (
+           <div className="absolute inset-0 bg-[var(--color-card)]/40 backdrop-blur-[1px] flex items-center justify-center z-10">
+              <div className="flex items-center gap-3 bg-white px-5 py-2.5 rounded-full shadow-lg border border-[var(--color-border)]">
+                 <span className="w-4 h-4 rounded-full border-2 border-[var(--color-primary)] border-t-transparent animate-spin" />
+                 <span className="text-xs font-bold text-[var(--color-foreground)] tracking-tight">Optimizing Image…</span>
+              </div>
+           </div>
+        )}
+      </div>
     </div>
   );
 }
