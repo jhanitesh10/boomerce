@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import SkuMasterForm from './SkuMasterForm';
 import { skuApi, refApi } from '../api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import {
   Plus, Search, Image as ImageIcon,
   ChevronLeft, ChevronRight, ArrowUpDown, Minimize2, Maximize2, Pin, PinOff, GripVertical,
-  LayoutGrid, Rocket, FileEdit, Filter, Download
+  LayoutGrid, Rocket, FileEdit, Filter, Download, SquarePen, Check, X
 } from 'lucide-react';
 
 const STATUS_BADGE_VARIANT = {
@@ -28,7 +27,6 @@ function StatusBadge({ label }) {
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-// Column definition: id = internal React key & DB field, key = stable export/import mapping identifier, label = UI display name
 const ALL_COLUMNS = [
   { id: 'primary_image_url',            key: 'image_url',            label: 'Image',           width: 64,  align: 'center', sortable: false },
   { id: 'product_name',                 key: 'product_name',         label: 'Product Name',    width: 260, sortable: true },
@@ -70,9 +68,21 @@ const FILTER_TABS = [
   { key: 'in development', icon: Rocket, label: (counts) => `New Launches (${counts['in development'] || counts['development'] || 0})` },
 ];
 
+// Columns excluded from inline editing
+const NON_INLINE_COLS = new Set(['primary_image_url', 'net_content', 'content_trigger']);
+
+// Reference column → ref type mapping
+const REF_COL_MAP = {
+  brand_reference_id: 'BRAND',
+  category_reference_id: 'CATEGORY',
+  sub_category_reference_id: 'SUB_CATEGORY',
+  status_reference_id: 'STATUS',
+};
+
 export default function MasterTab() {
   const [skus, setSkus] = useState([]);
   const [references, setReferences] = useState({ BRAND: {}, CATEGORY: {}, STATUS: {}, SUB_CATEGORY: {} });
+  const [refLists, setRefLists] = useState({ BRAND: [], CATEGORY: [], STATUS: [], SUB_CATEGORY: [] });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -85,7 +95,27 @@ export default function MasterTab() {
   const [pinnedCols, setPinnedCols] = useState(['primary_image_url', 'product_name', 'sku_code']);
   const [isContentExpanded, setIsContentExpanded] = useState(false);
 
+  // Inline edit: { skuId, colId }
+  const [inlineEdit, setInlineEdit] = useState(null);
+  // useRef holds the live value to avoid stale closure on save
+  const inlineValueRef = useRef('');
+  const inlineInputRef = useRef(null);
+  const savingRef = useRef(false); // prevent double-save on blur+enter
+
   useEffect(() => { loadAll(); }, []);
+
+  // Auto-focus when inline edit activates
+  useEffect(() => {
+    if (inlineEdit) {
+      setTimeout(() => {
+        if (inlineInputRef.current) {
+          inlineInputRef.current.focus();
+          // Select all text for quick replace
+          if (inlineInputRef.current.select) inlineInputRef.current.select();
+        }
+      }, 20);
+    }
+  }, [inlineEdit]);
 
   const loadAll = async () => {
     setLoading(true);
@@ -98,12 +128,47 @@ export default function MasterTab() {
       let subcats = [];
       try { subcats = await refApi.getAll('SUB_CATEGORY'); } catch (e) {}
       setReferences({ BRAND: toMap(brands), CATEGORY: toMap(cats), STATUS: toMap(statuses), SUB_CATEGORY: toMap(subcats) });
+      setRefLists({ BRAND: brands, CATEGORY: cats, STATUS: statuses, SUB_CATEGORY: subcats });
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
+
+  const startInlineEdit = useCallback((sku, colId) => {
+    if (NON_INLINE_COLS.has(colId)) return;
+    const currentVal = sku[colId] ?? '';
+    inlineValueRef.current = currentVal;
+    savingRef.current = false;
+    setInlineEdit({ skuId: sku.id, colId });
+  }, []);
+
+  const cancelInlineEdit = useCallback(() => {
+    savingRef.current = false;
+    setInlineEdit(null);
+  }, []);
+
+  const saveInlineEdit = useCallback(async (skuId, colId) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    const value = inlineValueRef.current;
+    setInlineEdit(null);
+
+    const parsed = value === '' ? null : value;
+    // Optimistic update
+    setSkus(prev => prev.map(s => s.id === skuId ? { ...s, [colId]: parsed } : s));
+    // Also update references display if it's a ref column
+    try {
+      await skuApi.update(skuId, { [colId]: parsed });
+    } catch (err) {
+      console.error('Inline save failed:', err);
+      // Revert optimistic update on error
+      loadAll();
+    } finally {
+      savingRef.current = false;
+    }
+  }, []);
 
   const togglePin = (colId) => {
     setPinnedCols(prev => prev.includes(colId) ? prev.filter(id => id !== colId) : [...prev, colId]);
@@ -159,13 +224,114 @@ export default function MasterTab() {
     return acc;
   }, {});
 
-  const renderCell = (col, sku) => {
+  // ── Inline editor ─────────────────────────────────────────────────────────
+  const renderInlineEditor = (col, skuId) => {
+    const onSave = () => saveInlineEdit(skuId, col.id);
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); cancelInlineEdit(); }
+      if (e.key === 'Enter' && col.id !== 'description' && !col.isContent) {
+        e.preventDefault();
+        onSave();
+      }
+    };
+    const baseCls = "w-full text-xs border border-[var(--color-primary)] rounded px-1.5 outline-none bg-white dark:bg-[var(--color-card)] text-[var(--color-foreground)] focus:ring-2 focus:ring-[var(--color-primary)]/30";
+
+    // Reference select
+    if (REF_COL_MAP[col.id]) {
+      const listKey = REF_COL_MAP[col.id];
+      return (
+        <select
+          ref={inlineInputRef}
+          defaultValue={inlineValueRef.current ?? ''}
+          onChange={e => { inlineValueRef.current = e.target.value; }}
+          onBlur={onSave}
+          onKeyDown={onKeyDown}
+          className={cn(baseCls, "py-1 cursor-pointer")}
+        >
+          <option value="">— none —</option>
+          {refLists[listKey].map(r => (
+            <option key={r.id} value={r.id}>{r.label}</option>
+          ))}
+        </select>
+      );
+    }
+
+    // Content textarea
+    if (col.isContent) {
+      return (
+        <textarea
+          ref={inlineInputRef}
+          defaultValue={inlineValueRef.current ?? ''}
+          onChange={e => { inlineValueRef.current = e.target.value; }}
+          onBlur={onSave}
+          onKeyDown={onKeyDown}
+          rows={3}
+          className={cn(baseCls, "py-1 resize-none")}
+        />
+      );
+    }
+
+    // Number
+    if (col.isNum) {
+      return (
+        <input
+          ref={inlineInputRef}
+          type="number"
+          defaultValue={inlineValueRef.current ?? ''}
+          onChange={e => { inlineValueRef.current = e.target.value; }}
+          onBlur={onSave}
+          onKeyDown={onKeyDown}
+          className={cn(baseCls, "py-0.5 text-right tabular-nums")}
+        />
+      );
+    }
+
+    // Default text
+    return (
+      <input
+        ref={inlineInputRef}
+        type="text"
+        defaultValue={inlineValueRef.current ?? ''}
+        onChange={e => { inlineValueRef.current = e.target.value; }}
+        onBlur={onSave}
+        onKeyDown={onKeyDown}
+        className={cn(baseCls, "py-0.5")}
+      />
+    );
+  };
+
+  // ── Cell renderer ─────────────────────────────────────────────────────────
+  const renderCell = (col, sku, openFullEdit) => {
+    // If this cell is in inline edit mode
+    if (inlineEdit?.skuId === sku.id && inlineEdit?.colId === col.id) {
+      return (
+        <div className="flex items-center gap-1 w-full">
+          <div className="flex-1 min-w-0">{renderInlineEditor(col, sku.id)}</div>
+          <button
+            onMouseDown={e => { e.preventDefault(); saveInlineEdit(sku.id, col.id); }}
+            className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center bg-green-500 text-white hover:bg-green-600 transition-colors"
+            title="Save (Enter)"
+          ><Check size={10} strokeWidth={3} /></button>
+          <button
+            onMouseDown={e => { e.preventDefault(); cancelInlineEdit(); }}
+            className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center bg-[var(--color-muted)] text-[var(--color-muted-foreground)] hover:bg-red-100 hover:text-red-500 transition-colors"
+            title="Cancel (Esc)"
+          ><X size={10} strokeWidth={3} /></button>
+        </div>
+      );
+    }
+
     const val = sku[col.id];
     switch (col.id) {
       case 'primary_image_url':
-        return val
-          ? <img src={val} alt="sku" className="w-9 h-9 object-cover rounded-lg border border-[var(--color-border)] mx-auto block" />
-          : <div className="w-9 h-9 rounded-lg border border-dashed border-[var(--color-border)] flex items-center justify-center text-[var(--color-muted-foreground)] mx-auto bg-[var(--color-muted)]"><ImageIcon size={16} /></div>;
+        return (
+          <div className="relative w-9 h-9 mx-auto flex-shrink-0">
+            {val
+              ? <img src={val} alt="sku" className="w-9 h-9 object-cover rounded-lg border border-[var(--color-border)] block" />
+              : <div className="w-9 h-9 rounded-lg border border-dashed border-[var(--color-border)] flex items-center justify-center text-[var(--color-muted-foreground)] bg-[var(--color-muted)]"><ImageIcon size={16} /></div>
+            }
+          </div>
+        );
       case 'product_name':
         return <span className="font-semibold text-[var(--color-foreground)] text-sm">{val || '—'}</span>;
       case 'sku_code':
@@ -208,7 +374,9 @@ export default function MasterTab() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-[var(--color-foreground)] tracking-tight">Product Master</h2>
-          <p className="text-xs text-[var(--color-muted-foreground)] mt-0.5">Double-click any row to edit.</p>
+          <p className="text-xs text-[var(--color-muted-foreground)] mt-0.5">
+            Click any cell to edit inline &middot; Click <SquarePen size={11} className="inline -mt-0.5" /> on row hover for full edit
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={() => alert('Filter UI pending')}>
@@ -243,7 +411,7 @@ export default function MasterTab() {
             </button>
           ))}
 
-          {/* Search — pushed right */}
+          {/* Search */}
           <div className="ml-auto flex items-center gap-1.5 border border-[var(--color-border)] rounded-lg px-2.5 py-1.5 bg-[var(--color-card)] mx-3 my-2 min-w-[220px] focus-within:ring-2 focus-within:ring-[var(--color-ring)] focus-within:border-transparent transition-all">
             <Search size={14} className="text-[var(--color-muted-foreground)] flex-shrink-0" />
             <input
@@ -261,6 +429,8 @@ export default function MasterTab() {
           <table className="w-full border-collapse text-sm" style={{ borderSpacing: 0 }}>
             <thead>
               <tr className="bg-[var(--color-muted)]">
+                {/* Actions column header — pinned left */}
+                <th className="sticky left-0 z-20 px-2 py-2.5 bg-[var(--color-muted)] border-b border-[var(--color-border)] w-10 min-w-[40px]" />
                 {finalColumns.map(col => {
                   const isContentTrigger = col.id === 'content_trigger';
                   return (
@@ -281,8 +451,6 @@ export default function MasterTab() {
                         {!col.isContent && !isContentTrigger && (
                           <GripVertical size={13} className="text-[var(--color-border)] opacity-60 flex-shrink-0 mt-0.5" />
                         )}
-
-                        {/* Label + Key stacked */}
                         <div
                           className={cn("flex-1 min-w-0 flex flex-col gap-0", col.sortable && "cursor-pointer")}
                           onClick={() => handleSort(col.id)}
@@ -301,7 +469,6 @@ export default function MasterTab() {
                             </span>
                           )}
                         </div>
-
                         {isContentTrigger && (
                           <button
                             className="p-0.5 rounded text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors flex-shrink-0 mt-0.5"
@@ -334,37 +501,64 @@ export default function MasterTab() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={finalColumns.length} className="py-16 text-center text-sm text-[var(--color-muted-foreground)]">Loading products…</td></tr>
+                <tr><td colSpan={finalColumns.length + 1} className="py-16 text-center text-sm text-[var(--color-muted-foreground)]">Loading products…</td></tr>
               ) : paginated.length === 0 ? (
-                <tr><td colSpan={finalColumns.length} className="py-16 text-center text-sm text-[var(--color-muted-foreground)]">No products found. Try adjusting your filters.</td></tr>
-              ) : paginated.map(sku => (
-                <tr
-                  key={sku.id}
-                  className="bg-[var(--color-card)] hover:bg-[var(--color-muted)]/50 transition-colors cursor-default group"
-                  onDoubleClick={() => { setEditingSku(sku); setIsFormOpen(true); }}
-                  title="Double-click to edit"
-                >
-                  {finalColumns.map(col => (
-                    <td
-                      key={`${sku.id}-${col.id}`}
-                      className={cn(
-                        "px-3 py-3 border-b border-[var(--color-border)]",
-                        col.isPinned && "sticky z-10 bg-[var(--color-card)]",
-                        col.isLastPinned && "shadow-[4px_0_8px_-2px_rgba(0,0,0,0.06)]",
-                        col.isContent && "bg-orange-50/60 max-w-[200px] overflow-hidden text-ellipsis"
-                      )}
-                      style={{
-                        width: col.width, minWidth: col.width, maxWidth: col.width,
-                        left: col.leftOffset, textAlign: col.align || 'left',
-                        overflow: 'hidden', textOverflow: 'ellipsis'
-                      }}
-                    >
-                      {renderCell(col, sku)}
-                      {col.isLastPinned && <div className="edge-shadow-layer" />}
+                <tr><td colSpan={finalColumns.length + 1} className="py-16 text-center text-sm text-[var(--color-muted-foreground)]">No products found. Try adjusting your filters.</td></tr>
+              ) : paginated.map(sku => {
+                const openFullEdit = () => { setEditingSku(sku); setIsFormOpen(true); };
+                return (
+                  <tr
+                    key={sku.id}
+                    className="bg-[var(--color-card)] hover:bg-[var(--color-muted)]/40 transition-colors group"
+                  >
+                    {/* Row action: edit button pinned left */}
+                    <td className="sticky left-0 z-20 px-1.5 py-2 border-b border-[var(--color-border)] bg-[var(--color-card)] w-10 min-w-[40px]">
+                      <button
+                        onClick={openFullEdit}
+                        className={cn(
+                          "flex items-center justify-center w-7 h-7 rounded-md transition-all duration-150",
+                          "opacity-0 group-hover:opacity-100",
+                          "bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white shadow-sm hover:shadow-md hover:scale-105 active:scale-95",
+                        )}
+                        title="Open full edit form"
+                      >
+                        <SquarePen size={13} strokeWidth={2} />
+                      </button>
                     </td>
-                  ))}
-                </tr>
-              ))}
+                    {finalColumns.map(col => {
+                      const isActiveInline = inlineEdit?.skuId === sku.id && inlineEdit?.colId === col.id;
+                      const canInline = !NON_INLINE_COLS.has(col.id);
+                      return (
+                        <td
+                          key={`${sku.id}-${col.id}`}
+                          onClick={!isActiveInline && canInline ? () => startInlineEdit(sku, col.id) : undefined}
+                          className={cn(
+                            "border-b border-[var(--color-border)] transition-all",
+                            isActiveInline
+                              ? "px-2 py-1.5 bg-[var(--color-primary)]/5"
+                              : "px-3 py-2.5",
+                            col.isPinned && "sticky z-10 bg-[var(--color-card)]",
+                            col.isLastPinned && "shadow-[4px_0_8px_-2px_rgba(0,0,0,0.06)]",
+                            col.isContent && !isActiveInline && "bg-orange-50/60",
+                            canInline && !isActiveInline && "cursor-pointer hover:bg-[var(--color-primary)]/5",
+                          )}
+                          style={{
+                            width: col.width, minWidth: col.width,
+                            maxWidth: isActiveInline ? undefined : col.width,
+                            left: col.leftOffset, textAlign: col.align || 'left',
+                            overflow: isActiveInline ? 'visible' : 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: isActiveInline ? 'normal' : 'nowrap',
+                          }}
+                        >
+                          {renderCell(col, sku, openFullEdit)}
+                          {col.isLastPinned && <div className="edge-shadow-layer" />}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
