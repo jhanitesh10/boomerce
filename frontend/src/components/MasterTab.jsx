@@ -7,6 +7,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import SkuMasterForm from './SkuMasterForm';
 import InlineCellEditor from './InlineCellEditor';
 import ExportSlideOver from './ExportSlideOver';
+import ImportSlideOver from './ImportSlideOver';
 import { skuApi, refApi } from '../api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -118,6 +119,7 @@ export default function MasterTab() {
   const [pageSize,       setPageSize]       = useState(25);
   const [isFormOpen,     setIsFormOpen]     = useState(false);
   const [isExportOpen,   setIsExportOpen]   = useState(false);
+  const [isImportOpen,   setIsImportOpen]   = useState(false);
   const [editingSku,     setEditingSku]     = useState(null);
   const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [inlineEdit,     setInlineEdit]     = useState(null); // { skuId, colId }
@@ -260,7 +262,7 @@ export default function MasterTab() {
           <p className="text-xs text-[var(--color-muted-foreground)] mt-0.5">Click any cell to edit inline · Hover image to open full form</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5 h-[34px]" onClick={()=>alert('Import coming soon')}><Upload size={14}/> Import</Button>
+          <Button variant="outline" size="sm" className="gap-1.5 h-[34px]" onClick={()=>setIsImportOpen(true)}><Upload size={14}/> Import</Button>
           <Button variant="outline" size="sm" className="gap-1.5 h-[34px]" onClick={()=>setIsExportOpen(true)}><Download size={14}/> Export</Button>
           <Button size="sm" className="gap-1.5 ml-1 h-[34px]" onClick={()=>{setEditingSku(null);setIsFormOpen(true);}}><Plus size={14}/> Add Product</Button>
         </div>
@@ -461,6 +463,7 @@ export default function MasterTab() {
 
       {isFormOpen && <SkuMasterForm initialData={editingSku} onClose={()=>setIsFormOpen(false)} onSaved={()=>{setIsFormOpen(false);loadAll();}}/>}
       {isExportOpen && <ExportSlideOver skus={skus} filtered={filtered} paginated={paginated} references={references} onClose={()=>setIsExportOpen(false)} />}
+      {isImportOpen && <ImportSlideOver skus={skus} refLists={refLists} onClose={()=>setIsImportOpen(false)} onImportComplete={()=>{setIsImportOpen(false);loadAll();}} />}
     </div>
   );
 }
