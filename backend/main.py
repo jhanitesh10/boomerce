@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 import datetime
 from typing import List
+import re
 
 import models
 import schemas
@@ -262,7 +263,30 @@ def get_references(ref_type: str = None, db: Session = Depends(get_db)):
 
 @app.post("/api/references", response_model=schemas.ReferenceData)
 def create_reference(data: schemas.ReferenceDataCreate, db: Session = Depends(get_db)):
-    db_item = models.ReferenceData(**data.model_dump())
+    # 1. Normalize label and type
+    label = data.label.strip() if data.label else ""
+    ref_type = data.reference_data_type.strip().upper()
+    
+    # 2. Case-insensitive duplicate check
+    from sqlalchemy import func
+    existing = db.query(models.ReferenceData).filter(
+        func.lower(models.ReferenceData.label) == label.lower(),
+        models.ReferenceData.reference_data_type == ref_type,
+        models.ReferenceData.deleted_at == None
+    ).first()
+    
+    if existing:
+        return existing
+        
+    # 3. Key Generation & Model Construction
+    payload = data.model_dump()
+    if not payload.get("key"):
+        # Generate a safe, unique key from the label
+        slug = re.sub(r'[^a-z0-9]+', '_', label.lower()).strip('_')
+        unique_suffix = uuid.uuid4().hex[:6]
+        payload["key"] = f"{ref_type.lower()}_{slug}_{unique_suffix}"
+    
+    db_item = models.ReferenceData(**payload)
     db.add(db_item)
     db.commit()
     db.refresh(db_item)

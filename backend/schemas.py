@@ -6,7 +6,7 @@ from datetime import datetime
 class ReferenceDataBase(BaseModel):
     reference_data_type: str
     label: Optional[str] = None
-    key: str
+    key: Optional[str] = None
     parent_reference_id: Optional[int] = None
     description: Optional[str] = None
     display_order: Optional[int] = 0

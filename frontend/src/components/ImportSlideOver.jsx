@@ -177,7 +177,7 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
       STATUS: [...(refLists.STATUS || [])]
     };
     
-    const resolveRef = async (type, labelValue) => {
+    const resolveRef = async (type, labelValue, parentId = null) => {
       if(!labelValue?.trim()) return null;
       const cleanLabel = labelValue.trim();
       const existing = localRefs[type].find(r => r.label.toLowerCase() === cleanLabel.toLowerCase());
@@ -185,7 +185,12 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
       
       // Auto-create
       try {
-         const newRef = await refApi.create({ ref_type: type, label: cleanLabel, is_active: true });
+         const newRef = await refApi.create({ 
+           reference_data_type: type, 
+           label: cleanLabel, 
+           is_active: true,
+           parent_reference_id: parentId
+         });
          localRefs[type].push(newRef);
          return newRef.id;
       } catch(e) {
@@ -205,7 +210,10 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
          // Resolve IDs
          mappedPayload.brand_reference_id = await resolveRef('BRAND', mappedPayload.brand_reference_id);
          mappedPayload.category_reference_id = await resolveRef('CATEGORY', mappedPayload.category_reference_id);
-         mappedPayload.sub_category_reference_id = await resolveRef('SUB_CATEGORY', mappedPayload.sub_category_reference_id);
+         
+         // For sub-category, we pass the category as parent if it exists
+         mappedPayload.sub_category_reference_id = await resolveRef('SUB_CATEGORY', mappedPayload.sub_category_reference_id, mappedPayload.category_reference_id);
+         
          mappedPayload.status_reference_id = await resolveRef('STATUS', mappedPayload.status_reference_id);
 
          // Clean numeric fields
