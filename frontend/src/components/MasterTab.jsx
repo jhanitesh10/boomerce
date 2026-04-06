@@ -1,14 +1,15 @@
+import {
+  Plus, Search, Image as ImageIcon, ChevronLeft, ChevronRight, ChevronDown,
+  ArrowUpDown, LayoutGrid, Rocket, FileEdit, Download, Upload,
+  SquarePen, Check, X, Filter, Maximize2, Minimize2
+} from 'lucide-react';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import SkuMasterForm from './SkuMasterForm';
+import InlineCellEditor from './InlineCellEditor';
 import { skuApi, refApi } from '../api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import {
-  Plus, Search, Image as ImageIcon, ChevronLeft, ChevronRight,
-  ArrowUpDown, LayoutGrid, Rocket, FileEdit, Download, Upload,
-  SquarePen, Check, X, Filter, Maximize2, Minimize2
-} from 'lucide-react';
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 const STATUS_VARIANTS = { active:'success', inactive:'destructive', draft:'draft', development:'development', 'in development':'development' };
@@ -20,9 +21,10 @@ function StatusBadge({ label }) {
 
 // ── Base columns (always visible, rowSpan=2, pinned left) ─────────────────────
 const BASE_COLS = [
-  { id: 'primary_image_url',  label: 'Image',    width: 68,  align: 'center', noInline: true, sticky: true, stickyLeft: 0 },
-  { id: 'product_name',       label: 'Product',  width: 260, sortable: true,  sticky: true, stickyLeft: 68 },
-  { id: 'barcode',            label: 'Barcode',  width: 130, isMono: true,    sticky: true, stickyLeft: 328 },
+  { id: 'actions',            label: '',         width: 44,  align: 'center', noInline: true, sticky: true, stickyLeft: 0 },
+  { id: 'primary_image_url',  label: 'Image',    width: 68,  align: 'center', noInline: true, sticky: true, stickyLeft: 44 },
+  { id: 'product_name',       label: 'Product',  width: 260, sortable: true,  sticky: true, stickyLeft: 112 },
+  { id: 'barcode',            label: 'Barcode',  width: 130, isMono: true,    sticky: true, stickyLeft: 372 },
 ];
 
 // ── Column groups (collapsed → only first col shown) ──────────────────────────
@@ -117,14 +119,17 @@ export default function MasterTab() {
   const [editingSku,     setEditingSku]     = useState(null);
   const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [inlineEdit,     setInlineEdit]     = useState(null); // { skuId, colId }
-  const inlineValueRef = useRef('');
-  const inlineInputRef = useRef(null);
+  const [selectedCell,   setSelectedCell]   = useState(null); // { skuId, colId }
   const savingRef      = useRef(false);
 
   useEffect(() => { loadAll(); }, []);
+  
+  // Clear selection if user clicks entirely outside the table
   useEffect(() => {
-    if (inlineEdit) setTimeout(() => { inlineInputRef.current?.focus(); inlineInputRef.current?.select?.(); }, 20);
-  }, [inlineEdit]);
+    const handleGlobalClick = (e) => { if (!e.target.closest('td')) setSelectedCell(null); };
+    document.addEventListener('mousedown', handleGlobalClick);
+    return () => document.removeEventListener('mousedown', handleGlobalClick);
+  }, []);
 
   const loadAll = async () => {
     setLoading(true);
@@ -141,16 +146,18 @@ export default function MasterTab() {
   };
 
   const toggleGroup    = useCallback(gid => setExpandedGroups(prev => { const n = new Set(prev); n.has(gid) ? n.delete(gid) : n.add(gid); return n; }), []);
-  const startInlineEdit = useCallback((sku, colId) => { if (NON_INLINE.has(colId)) return; inlineValueRef.current = sku[colId] ?? ''; savingRef.current = false; setInlineEdit({ skuId: sku.id, colId }); }, []);
+  const startInlineEdit = useCallback((sku, colId) => { if (NON_INLINE.has(colId)) return; savingRef.current = false; setInlineEdit({ skuId: sku.id, colId }); }, []);
   const cancelInlineEdit = useCallback(() => { savingRef.current = false; setInlineEdit(null); }, []);
-  const saveInlineEdit   = useCallback(async (skuId, colId) => {
+  const saveInlineEdit   = useCallback(async (skuId, colId, value) => {
     if (savingRef.current) return; savingRef.current = true;
-    const parsed = inlineValueRef.current === '' ? null : inlineValueRef.current;
+    const parsed = value === '' ? null : value;
     setInlineEdit(null);
-    setSkus(prev => prev.map(s => s.id === skuId ? { ...s, [colId]: parsed } : s));
-    try { await skuApi.update(skuId, { [colId]: parsed }); }
-    catch (err) { console.error('Save failed:', err); loadAll(); }
-    finally { savingRef.current = false; }
+    if (parsed !== undefined) {
+      setSkus(prev => prev.map(s => s.id === skuId ? { ...s, [colId]: parsed } : s));
+      try { await skuApi.update(skuId, { [colId]: parsed }); }
+      catch (err) { console.error('Save failed:', err); loadAll(); }
+    }
+    savingRef.current = false;
   }, []);
 
   // Flatten visible columns for data rows
@@ -188,35 +195,30 @@ export default function MasterTab() {
   }, []);
 
   // ── Inline editor ───────────────────────────────────────────────────────────
-  const renderInlineEditor = (col, skuId) => {
-    const onSave = () => saveInlineEdit(skuId, col.id);
-    const onKey  = e => { if (e.key==='Escape'){e.preventDefault();cancelInlineEdit();} if(e.key==='Enter'&&!col.isContent){e.preventDefault();onSave();} };
-    const base   = "w-full text-xs border border-[var(--color-primary)] rounded-md px-2 outline-none bg-[var(--color-card)] text-[var(--color-foreground)] focus:ring-2 focus:ring-[var(--color-primary)]/25";
-    if (REF_MAP[col.id]) return (
-      <select ref={inlineInputRef} defaultValue={inlineValueRef.current??''} onChange={e=>{inlineValueRef.current=e.target.value;}} onBlur={onSave} onKeyDown={onKey} className={cn(base,"py-1 cursor-pointer")}>
-        <option value="">— none —</option>
-        {refLists[REF_MAP[col.id]].map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
-      </select>
-    );
-    if (col.isContent) return <textarea ref={inlineInputRef} defaultValue={inlineValueRef.current??''} onChange={e=>{inlineValueRef.current=e.target.value;}} onBlur={onSave} onKeyDown={onKey} rows={3} className={cn(base,"py-1 resize-none")} />;
-    return <input ref={inlineInputRef} type={col.isNum?'number':'text'} defaultValue={inlineValueRef.current??''} onChange={e=>{inlineValueRef.current=e.target.value;}} onBlur={onSave} onKeyDown={onKey} className={cn(base,"py-1",col.isNum&&"text-right tabular-nums")} />;
-  };
-
   // ── Cell renderer ───────────────────────────────────────────────────────────
   const renderCell = (col, sku, openFullEdit) => {
-    if (inlineEdit?.skuId===sku.id && inlineEdit?.colId===col.id) return (
-      <div className="flex items-center gap-1 w-full">
-        <div className="flex-1 min-w-0">{renderInlineEditor(col, sku.id)}</div>
-        <button onMouseDown={e=>{e.preventDefault();saveInlineEdit(sku.id,col.id);}} className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center bg-green-500 text-white hover:bg-green-600"><Check size={10} strokeWidth={3}/></button>
-        <button onMouseDown={e=>{e.preventDefault();cancelInlineEdit();}} className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center bg-[var(--color-muted)] text-[var(--color-muted-foreground)] hover:bg-red-100 hover:text-red-500"><X size={10} strokeWidth={3}/></button>
-      </div>
-    );
+    if (inlineEdit?.skuId===sku.id && inlineEdit?.colId===col.id) {
+      return (
+        <InlineCellEditor
+          col={col}
+          sku={sku}
+          initialValue={sku[col.id]}
+          refLists={refLists}
+          onSave={(val) => saveInlineEdit(sku.id, col.id, val)}
+          onCancel={cancelInlineEdit}
+        />
+      );
+    }
     const val = sku[col.id];
     switch (col.id) {
+      case 'actions': return (
+        <button onClick={openFullEdit} className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] text-[var(--color-muted-foreground)] transition-all mx-auto focus:opacity-100" title="Edit Full Product">
+          <SquarePen size={15} />
+        </button>
+      );
       case 'primary_image_url': return (
-        <div className="relative w-10 h-10 mx-auto rounded-xl overflow-hidden border border-[var(--color-border)] cursor-pointer group/img" onClick={openFullEdit}>
+        <div className="w-10 h-10 mx-auto rounded-xl overflow-hidden border border-[var(--color-border)]">
           {val ? <img src={val} alt="sku" className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center bg-[var(--color-muted)]"><ImageIcon size={16} className="text-[var(--color-muted-foreground)]"/></div>}
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity"><SquarePen size={14} className="text-white"/></div>
         </div>
       );
       case 'product_name': return (
@@ -354,10 +356,10 @@ export default function MasterTab() {
                       style={{minWidth: expanded ? g.cols.reduce((s,c)=>s+c.width,0) : g.cols[0].width}}>
                       <div className="flex items-center justify-center gap-2">
                         <span className="text-[11px] font-bold tracking-wider uppercase">{g.label}</span>
-                        <button onClick={()=>toggleGroup(g.id)} className={cn("flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all", gc.pill)}>
+                        <button onClick={()=>toggleGroup(g.id)} className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all", gc.pill)}>
                           {expanded
-                            ? <><ChevronLeft size={10}/><span>Collapse</span></>
-                            : <><span>+{hiddenN}</span><ChevronRight size={10}/></>}
+                            ? <><Minimize2 size={12}/><span>Collapse</span></>
+                            : <><Maximize2 size={12}/><span>Expand ({hiddenN})</span></>}
                         </button>
                       </div>
                     </th>
@@ -398,6 +400,7 @@ export default function MasterTab() {
                   <tr key={sku.id} className="group bg-[var(--color-card)] hover:bg-[var(--color-muted)]/30 transition-colors">
                     {visibleCols.map((col, colIdx) => {
                       const isActive   = inlineEdit?.skuId===sku.id && inlineEdit?.colId===col.id;
+                      const isSelected = selectedCell?.skuId===sku.id && selectedCell?.colId===col.id && !isActive;
                       const canInline  = !col.noInline && !NON_INLINE.has(col.id) && col.id!=='primary_image_url';
                       const grp        = colGroupMap[col.id];
                       const gc         = grp ? GC[grp.color] : null;
@@ -405,17 +408,17 @@ export default function MasterTab() {
                       const isFirstGroupCol = grp && GROUPS.find(g=>g.id===grp.id)?.cols[0]?.id===col.id;
                       return (
                         <td key={`${sku.id}-${col.id}`}
-                          onClick={isActive ? undefined : canInline ? ()=>startInlineEdit(sku,col.id) : undefined}
-                          title={canInline&&!isActive?'Click to edit':undefined}
+                          onClick={isActive ? undefined : () => setSelectedCell({skuId: sku.id, colId: col.id})}
+                          onDoubleClick={isActive || !canInline ? undefined : () => { startInlineEdit(sku, col.id); setSelectedCell(null); }}
                           className={cn(
-                            "border-b border-[var(--color-border)] transition-all",
-                            isActive ? "px-3 py-1.5 bg-[var(--color-primary)]/5" : "px-4 py-3",
+                            "border-b border-[var(--color-border)] transition-all relative group/cell",
+                            isActive ? "p-0 z-30" : "px-4 py-3 cursor-default",
+                            isSelected && "outline outline-2 outline-[var(--color-primary)] outline-offset-[-2px] z-20 bg-[var(--color-primary)]/10 shadow-sm",
                             col.sticky && "sticky z-10 bg-[var(--color-card)] shadow-[inset_-1px_0_0_transparent]",
                             /* Ensure base columns have a right border when scrolling */
                             col.sticky && (col.id === 'barcode' ? "!shadow-[inset_-1px_0_0_var(--color-border)]" : ""),
-                            gc && !isActive && gc.td,
+                            gc && !isActive && !isSelected && gc.td,
                             isFirstGroupCol && "border-l border-[var(--color-border)]",
-                            canInline && !isActive && "cursor-pointer hover:bg-[var(--color-primary)]/5",
                           )}
                           style={{
                             width: col.width, minWidth: col.width,

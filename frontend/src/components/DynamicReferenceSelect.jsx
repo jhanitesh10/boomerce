@@ -8,25 +8,35 @@ export default function DynamicReferenceSelect({
   referenceType,
   value,
   onChange,
-  placeholder = "Select option..."
+  onBlur,
+  placeholder = "Select option...",
+  preloadedOptions = null,
+  className
 }) {
-  const [options, setOptions] = useState([]);
+  const [options, setOptions] = useState(preloadedOptions || []);
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef(null);
 
-  useEffect(() => { loadOptions(); }, [referenceType]);
+  useEffect(() => {
+    if (!preloadedOptions) {
+      loadOptions();
+    } else {
+      setOptions(preloadedOptions);
+    }
+  }, [referenceType, preloadedOptions]);
 
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setIsOpen(false);
+        if (onBlur) onBlur();
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [onBlur]);
 
   const loadOptions = () => {
     setLoading(true);
@@ -70,14 +80,17 @@ export default function DynamicReferenceSelect({
   const selectedOption = options.find(opt => opt.id === value);
 
   return (
-    <div className="relative w-full" ref={dropdownRef}>
+    <div className={cn("relative w-full", className)} ref={dropdownRef}>
       {label && (
         <label className="block text-xs font-medium text-[var(--color-foreground)] mb-1.5">{label}</label>
       )}
 
       {/* Trigger */}
       <div
-        className="flex items-center justify-between w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-sm cursor-pointer transition-all hover:border-[var(--color-primary)]/50 focus-within:ring-2 focus-within:ring-[var(--color-ring)] focus-within:border-transparent"
+        className={cn(
+          "flex items-center justify-between w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-sm cursor-pointer transition-all hover:border-[var(--color-primary)]/50 focus-within:ring-2 focus-within:ring-[var(--color-ring)] focus-within:border-transparent",
+          className ? "border-transparent bg-transparent hover:border-transparent ring-0 rounded-none h-full focus-within:ring-0 focus-within:border-transparent p-0 px-2" : ""
+        )}
         onClick={() => setIsOpen(!isOpen)}
       >
         <span className={cn("truncate", !selectedOption && "text-[var(--color-muted-foreground)]")}>
