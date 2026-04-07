@@ -261,7 +261,7 @@ export default function MasterTab() {
 
 
   // ── Auto-save helper for Notes ──────────────────────────────────────────────
-  const handleNoteClose = async () => {
+  const handleNoteClose = useCallback(async () => {
     if (!activeNoteSkuId) return;
     const sku = skus.find(s => s.id === activeNoteSkuId);
     const draft = noteDraftRef.current;
@@ -271,7 +271,7 @@ export default function MasterTab() {
       await saveInlineEdit(activeNoteSkuId, 'remark', draft);
     }
     setActiveNoteSkuId(null);
-  };
+  }, [activeNoteSkuId, skus, saveInlineEdit]);
 
   // ── Global Event Listeners ──────────────────────────────────────────────────
   useEffect(() => { loadAll(); }, []);
@@ -289,7 +289,7 @@ export default function MasterTab() {
     };
     document.addEventListener('mousedown', handleGlobalClick);
     return () => document.removeEventListener('mousedown', handleGlobalClick);
-  }, [activeNoteSkuId, skus]);
+  }, [activeNoteSkuId, skus, handleNoteClose]);
 
 
 
@@ -298,7 +298,7 @@ export default function MasterTab() {
     try {
       const [skuData, brands, cats, statuses] = await Promise.all([skuApi.getAll(), refApi.getAll('BRAND'), refApi.getAll('CATEGORY'), refApi.getAll('STATUS')]);
       let subcats = [];
-      try { subcats = await refApi.getAll('SUB_CATEGORY'); } catch (_) {}
+      try { subcats = await refApi.getAll('SUB_CATEGORY'); } catch { /* ignore */ }
       const toMap = arr => arr.reduce((a, r) => ({ ...a, [r.id]: r.label }), {});
       setSkus(skuData);
       setReferences({ BRAND: toMap(brands), CATEGORY: toMap(cats), STATUS: toMap(statuses), SUB_CATEGORY: toMap(subcats) });
