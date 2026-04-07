@@ -9,6 +9,8 @@ import SkuMasterForm from './SkuMasterForm';
 import InlineCellEditor from './InlineCellEditor';
 import ExportSlideOver from './ExportSlideOver';
 import ImportSlideOver from './ImportSlideOver';
+import FilterSlideOver from './FilterSlideOver';
+
 import { skuApi, refApi } from '../api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -218,6 +220,33 @@ export default function MasterTab() {
   const [isFormOpen,     setIsFormOpen]     = useState(false);
   const [isExportOpen,   setIsExportOpen]   = useState(false);
   const [isImportOpen,   setIsImportOpen]   = useState(false);
+  const [isFilterOpen,   setIsFilterOpen]   = useState(false);
+
+  // Advanced Filtering State
+  const initialFilters = {
+    brandIds: [],
+    categoryIds: [],
+    subCategoryIds: [],
+    statusIds: [],
+    minPrice: '',
+    maxPrice: '',
+    productType: '',
+    hasImage: null,
+    hasNotes: null,
+  };
+  const [filters, setFilters] = useState(initialFilters);
+  const isFilterActive = useMemo(() => 
+    filters.brandIds.length > 0 || 
+    filters.categoryIds.length > 0 || 
+    filters.subCategoryIds.length > 0 ||
+    filters.statusIds.length > 0 || 
+    filters.minPrice !== '' || 
+    filters.maxPrice !== '' || 
+    filters.productType !== '' ||
+    filters.hasImage !== null || 
+    filters.hasNotes !== null
+  , [filters]);
+
   const [editingSku,     setEditingSku]     = useState(null);
   const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [inlineEdit,     setInlineEdit]     = useState(null); // { skuId, colId }
@@ -303,16 +332,50 @@ export default function MasterTab() {
 
 
   const filtered = useMemo(() => skus.filter(s => {
+    // 1. Search Query
     const q = search.toLowerCase();
-    const match = !q || s.product_name?.toLowerCase().includes(q) || s.sku_code?.toLowerCase().includes(q) || s.barcode?.toLowerCase().includes(q);
-    const statusLabel = references.STATUS[s.status_reference_id]?.toLowerCase() || '';
-    return match && (statusFilter === 'all' || statusLabel === statusFilter);
+    const matchSearch = !q || s.product_name?.toLowerCase().includes(q) || s.sku_code?.toLowerCase().includes(q) || s.barcode?.toLowerCase().includes(q);
+    if (!matchSearch) return false;
+
+    // 2. Status Tab
+    const statusLabel = (references.STATUS?.[s.status_reference_id] || '').toLowerCase();
+    if (statusFilter !== 'all' && statusLabel !== statusFilter) return false;
+
+    // 3. Multi-Select Status
+    if (filters.statusIds.length > 0 && !filters.statusIds.includes(s.status_reference_id)) return false;
+
+    // 4. Brands
+    if (filters.brandIds.length > 0 && !filters.brandIds.includes(s.brand_reference_id)) return false;
+
+    // 5. Categories
+    if (filters.categoryIds.length > 0 && !filters.categoryIds.includes(s.category_reference_id)) return false;
+
+    // 6. Sub Categories
+    if (filters.subCategoryIds?.length > 0 && !filters.subCategoryIds.includes(s.sub_category_reference_id)) return false;
+
+    // 7. Price Range
+    const price = s.mrp || 0;
+    if (filters.minPrice !== '' && price < parseFloat(filters.minPrice)) return false;
+    if (filters.maxPrice !== '' && price > parseFloat(filters.maxPrice)) return false;
+
+    // 8. Product Type
+    if (filters.productType !== '' && s.product_type !== filters.productType) return false;
+
+    // 9. Boolean / Quality Checks
+    if (filters.hasImage === true && !s.primary_image_url) return false;
+    if (filters.hasImage === false && s.primary_image_url) return false;
+    
+    if (filters.hasNotes === true && !s.remark) return false;
+    if (filters.hasNotes === false && s.remark) return false;
+
+    return true;
   }).sort((a, b) => {
+
     let va = a[sortCol] ?? '', vb = b[sortCol] ?? '';
     if (typeof va === 'string') va = va.toLowerCase();
     if (typeof vb === 'string') vb = vb.toLowerCase();
     return va < vb ? (sortDir === 'asc' ? -1 : 1) : va > vb ? (sortDir === 'asc' ? 1 : -1) : 0;
-  }), [skus, search, statusFilter, references, sortCol, sortDir]);
+  }), [skus, search, statusFilter, filters, references, sortCol, sortDir]);
 
   const totalPages    = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated     = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -447,24 +510,34 @@ export default function MasterTab() {
             ))}
           </div>
 
-          <div className="w-px h-6 bg-[var(--color-border)] mx-1" />
+          <div className="w-px h-6 bg-slate-200 mx-1" />
 
           {/* Search */}
-          <div className="flex items-center gap-1.5 border border-[var(--color-border)] rounded-lg px-2.5 h-[32px] focus-within:ring-2 focus-within:ring-[var(--color-primary)]/20 transition-all bg-[var(--color-card)]">
-            <Search size={14} className="text-[var(--color-muted-foreground)]" />
+          <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 h-[32px] focus-within:ring-2 focus-within:ring-[var(--color-primary)]/20 transition-all bg-[var(--color-card)]">
+            <Search size={14} className="text-slate-400" />
             <input 
               type="text" 
               placeholder="Search product, SKU..." 
               value={search} 
               onChange={e => { setSearch(e.target.value); setPage(1); }} 
-              className="bg-transparent text-xs w-48 outline-none text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)]"
+              className="bg-transparent text-xs w-48 outline-none text-slate-700 placeholder:text-slate-400"
             />
           </div>
 
           {/* Filter / Sort Buttons */}
-          <Button variant="outline" size="sm" className="h-[32px] gap-1.5 px-3 text-[var(--color-muted-foreground)]"><Filter size={13}/> Filter</Button>
-          <Button variant="outline" size="sm" className="h-[32px] gap-1.5 px-3 text-[var(--color-muted-foreground)]"><ArrowUpDown size={13}/> Sort</Button>
+          <Button 
+            variant={isFilterActive ? "default" : "secondary"}
+            size="sm" 
+            className={cn("h-[32px] gap-1.5 px-3 transition-all", isFilterActive && "bg-[var(--color-primary)] text-white shadow-md ring-1 ring-[var(--color-primary)]")}
+            onClick={() => setIsFilterOpen(true)}
+          >
+            <Filter size={13} fill={isFilterActive ? "currentColor" : "none"} />
+            <span className="font-bold">Filter</span>
+            {isFilterActive && <span className="ml-0.5 w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
+          </Button>
+          <Button variant="secondary" size="sm" className="h-[32px] gap-1.5 px-3 text-slate-500 hover:text-slate-700"><ArrowUpDown size={13}/> <span className="font-bold">Sort</span></Button>
         </div>
+
 
         {/* Right: Expand / Collapse All */}
         <div className="flex items-center border border-[var(--color-border)] rounded-md overflow-hidden bg-[var(--color-card)] shadow-sm">
@@ -475,13 +548,14 @@ export default function MasterTab() {
           >
             <Maximize2 size={13}/> Expand All
           </button>
-          <button 
-            onClick={() => setExpandedGroups(new Set())} 
-            disabled={isAllCollapsed} 
-            className="flex items-center gap-1.5 px-3 h-[32px] text-xs font-semibold transition-colors text-[var(--color-foreground)] hover:bg-[var(--color-muted)] disabled:opacity-40 disabled:hover:bg-[var(--color-card)]"
-          >
-            <Minimize2 size={13}/> Collapse All
-          </button>
+            <button 
+              onClick={() => { setSearch(''); setFilters(initialFilters); setStatusFilter('all'); setPage(1); }}
+              className="mt-6 flex items-center gap-2 px-5 py-2.5 bg-[var(--color-primary)] text-white rounded-xl text-xs font-bold shadow-lg shadow-[var(--color-primary)]/20 hover:scale-105 active:scale-95 transition-all"
+            >
+              <RefreshCcw size={14} />
+              Clear all search & filters
+            </button>
+
         </div>
       </div>
 
@@ -649,6 +723,30 @@ export default function MasterTab() {
       {isFormOpen && <SkuMasterForm initialData={editingSku} onClose={()=>setIsFormOpen(false)} onSaved={()=>{setIsFormOpen(false);loadAll();}}/>}
       {isExportOpen && <ExportSlideOver skus={skus} filtered={filtered} paginated={paginated} references={references} onClose={()=>setIsExportOpen(false)} />}
       {isImportOpen && <ImportSlideOver skus={skus} refLists={refLists} onClose={()=>setIsImportOpen(false)} onImportComplete={()=>{setIsImportOpen(false);loadAll();}} />}
+
+      <FilterSlideOver 
+        isOpen={isFilterOpen}
+        onClose={() => setIsFilterOpen(false)}
+        filters={filters}
+        onFilterChange={(update) => setFilters(prev => ({ ...prev, ...update }))}
+        onClearAll={() => { setFilters(initialFilters); setSearch(''); setStatusFilter('all'); }}
+        references={references}
+        refLists={refLists}
+        matchCount={filtered.length}
+      />
+
     </div>
   );
 }
+
+function FilterChip({ label, onRemove }) {
+  return (
+    <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-lg text-[10px] font-bold shadow-sm animate-in fade-in zoom-in-95 duration-200 group">
+      <span className="text-slate-700">{label}</span>
+      <button onClick={onRemove} className="text-slate-300 hover:text-red-500 transition-colors">
+        <X size={12} strokeWidth={2.5} />
+      </button>
+    </div>
+  );
+}
+
