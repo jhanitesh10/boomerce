@@ -1,8 +1,9 @@
 import {
   Plus, Search, Image as ImageIcon, ChevronLeft, ChevronRight, ChevronDown,
   ArrowUpDown, LayoutGrid, Rocket, FileEdit, Download, Upload,
-  SquarePen, Check, X, Filter, Maximize2, Minimize2, StickyNote, Send, Trash2
+  SquarePen, Check, X, Filter, Maximize2, Minimize2, StickyNote, Send, Trash2, RefreshCcw
 } from 'lucide-react';
+
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import SkuMasterForm from './SkuMasterForm';
@@ -87,7 +88,9 @@ const GROUPS = [
       { id: 'product_care', label: 'Product Care', width: 260, isContent: true },
       { id: 'caution',      label: 'Caution',      width: 220, isContent: true },
       { id: 'seo_keywords', label: 'SEO Keywords', width: 200, isContent: true },
+      { id: 'createdAt',    label: 'Published',    width: 140, sortable: true, noInline: true },
       { id: 'catalog_url',  label: 'Catalog URL',  width: 140, noInline: true },
+
     ],
   },
 ];
@@ -429,6 +432,17 @@ export default function MasterTab() {
       case 'net_content':  return <span className="text-sm text-[var(--color-muted-foreground)]">{sku.net_content_value ? `${sku.net_content_value} ${sku.net_content_unit||''}` : '—'}</span>;
       case 'tax_percent':  return <span className="text-sm text-[var(--color-muted-foreground)]">{val!=null ? `${val}%` : '—'}</span>;
       case 'catalog_url':  return val ? <a href={val} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="text-xs text-[var(--color-primary)] underline underline-offset-2 truncate block">Link ↗</a> : <span className="text-xs text-[var(--color-muted-foreground)]">—</span>;
+      case 'createdAt': {
+        if (!val) return <span className="text-sm text-[var(--color-muted-foreground)]">—</span>;
+        const d = new Date(val);
+        return (
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold text-[var(--color-foreground)] leading-tight">{d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            <span className="text-[10px] text-[var(--color-muted-foreground)] tabular-nums opacity-70 uppercase">{d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+          </div>
+        );
+      }
+
       case 'remark': return (
         <div className="relative flex items-center justify-center">
           <button 
