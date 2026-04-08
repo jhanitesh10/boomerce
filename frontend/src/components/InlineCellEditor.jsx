@@ -43,12 +43,14 @@ export default function InlineCellEditor({
   const baseOuter = "w-full h-full absolute inset-0 px-4 py-3 bg-[var(--color-card)] outline-none border-2 border-[var(--color-primary)] shadow-[0_4px_12px_rgba(0,0,0,0.1)] z-[100] transition-colors";
 
   // ── 1. DROPDOWN (Combobox) ──────────────────────────────────────────────────
-  if (['brand_reference_id', 'category_reference_id', 'sub_category_reference_id', 'status_reference_id'].includes(col.id)) {
+  if (['brand_reference_id', 'category_reference_id', 'sub_category_reference_id', 'status_reference_id', 'bundle_type', 'pack_type'].includes(col.id)) {
     const listMap = { 
       'brand_reference_id': 'BRAND', 
       'category_reference_id': 'CATEGORY', 
       'sub_category_reference_id': 'SUB_CATEGORY', 
-      'status_reference_id': 'STATUS' 
+      'status_reference_id': 'STATUS',
+      'bundle_type': 'BUNDLE_TYPE',
+      'pack_type': 'PACK_TYPE'
     };
     const refType = listMap[col.id];
     

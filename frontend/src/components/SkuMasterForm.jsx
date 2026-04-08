@@ -234,11 +234,11 @@ const TABS = [
 ];
 
 const TAB_FIELDS = {
-  identity:       ['product_name', 'sku_code', 'barcode', 'brand_reference_id', 'product_component_group_code', 'primary_image_url'],
+  identity:       ['product_name', 'sku_code', 'brand_reference_id', 'product_component_group_code', 'primary_image_url'],
   content:        ['description', 'key_feature', 'key_ingredients', 'ingredients', 'how_to_use', 'product_care', 'caution', 'seo_keywords', 'catalog_url'],
   classification: ['category_reference_id', 'sub_category_reference_id', 'status_reference_id'],
   pricing:        ['mrp', 'purchase_cost', 'net_content_value', 'net_content_unit', 'color', 'raw_product_size', 'package_size', 'package_weight', 'raw_product_weight', 'finished_product_weight'],
-  bundling:       ['product_type', 'bundle_type', 'pack_type'],
+  bundling:       ['bundle_type', 'pack_type'],
   tax:            ['tax_rule_code', 'tax_percent'],
 };
 
@@ -260,7 +260,7 @@ const EMPTY = {
   category_reference_id: null, sub_category_reference_id: null, status_reference_id: null,
   mrp: '', purchase_cost: '', color: '', raw_product_size: '', package_size: '',
   package_weight: '', raw_product_weight: '', finished_product_weight: '',
-  net_content_value: '', net_content_unit: '', bundle_type: '', product_type: '', pack_type: '',
+  net_content_value: '', net_content_unit: '', bundle_type: null, pack_type: null,
   tax_rule_code: '', tax_percent: '',
 };
 
@@ -271,9 +271,16 @@ const inputCls = (hasError) => cn(
 );
 
 // ─── Main Form ────────────────────────────────────────────────────
-export default function SkuMasterForm({ initialData, onClose, onSaved }) {
+export default function SkuMasterForm({ initialData, statusOptions, onClose, onSaved }) {
   const [form, setForm] = useState(() => {
-    if (!initialData) return { ...EMPTY };
+    if (!initialData) {
+      // Set default status to "Draft" if available
+      const draftStatus = (statusOptions || []).find(s => s.label.toLowerCase() === 'draft');
+      return { 
+        ...EMPTY,
+        status_reference_id: draftStatus ? draftStatus.id : EMPTY.status_reference_id 
+      };
+    }
     const merged = { ...EMPTY };
     for (const key of Object.keys(EMPTY)) {
       const v = initialData[key];
@@ -311,7 +318,21 @@ export default function SkuMasterForm({ initialData, onClose, onSaved }) {
   const set = (name, value) => setForm(p => ({ ...p, [name]: value }));
   const handleChange = (e) => {
     const { name, value } = e.target;
-    set(name, value);
+    
+    setForm(p => {
+      const next = { ...p, [name]: value };
+      // Mirror SKU code → barcode (single input writes to both DB columns)
+      if (name === 'sku_code') {
+        next.barcode = value;
+      }
+      if (name === 'package_weight' || name === 'raw_product_weight') {
+        const pWeight = parseFloat(next.package_weight) || 0;
+        const rWeight = parseFloat(next.raw_product_weight) || 0;
+        next.finished_product_weight = (pWeight > 0 || rWeight > 0) ? Number((pWeight + rWeight).toFixed(3)).toString() : '';
+      }
+      return next;
+    });
+
     if (errors[name]) setErrors(p => ({ ...p, [name]: null }));
   };
 
@@ -499,18 +520,11 @@ export default function SkuMasterForm({ initialData, onClose, onSaved }) {
                       placeholder="e.g. Bloomerce Rose Petal Face Wash" />
                   </Field>
 
-                  <FieldRow>
-                    <Field label="SKU Code" required error={errors.sku_code}>
-                      <input type="text" name="sku_code" value={form.sku_code} onChange={handleChange}
-                        className={cn(inputCls(errors.sku_code), "font-mono")}
-                        placeholder="e.g. BL-RFW-001" />
-                    </Field>
-                    <Field label="Barcode / EAN">
-                      <input type="text" name="barcode" value={form.barcode} onChange={handleChange}
-                        className={cn(inputCls(false), "font-mono")}
-                        placeholder="e.g. 8901234567891" />
-                    </Field>
-                  </FieldRow>
+                  <Field label="SKU / EAN / Barcode ID" required error={errors.sku_code} hint="Saved as both SKU Code and Barcode/EAN in the database">
+                    <input type="text" name="sku_code" value={form.sku_code} onChange={handleChange}
+                      className={cn(inputCls(errors.sku_code), "font-mono")}
+                      placeholder="e.g. BL-RFW-001 or 8901234567891" />
+                  </Field>
 
                   <FieldRow>
                     <Field label="Brand">
@@ -639,7 +653,7 @@ export default function SkuMasterForm({ initialData, onClose, onSaved }) {
                       <input type="number" name="raw_product_weight" value={form.raw_product_weight} onChange={handleChange}
                         className={inputCls(false)} placeholder="100" min="0" step="0.01" />
                     </Field>
-                    <Field label="Finished Product Weight (g)">
+                    <Field label="Finished Product Weight (g)" hint="Auto-calculated (Raw + Package)">
                       <input type="number" name="finished_product_weight" value={form.finished_product_weight} onChange={handleChange}
                         className={inputCls(false)} placeholder="125" min="0" step="0.01" />
                     </Field>
@@ -651,28 +665,30 @@ export default function SkuMasterForm({ initialData, onClose, onSaved }) {
               {activeTab === 'bundling' && (
                 <>
                   <FieldRow>
-                    <Field label="Product Type" hint="e.g. Standalone, Combo">
-                      <input type="text" name="product_type" value={form.product_type} onChange={handleChange}
-                        className={inputCls(false)} placeholder="Standalone" />
-                    </Field>
-                    <Field label="Bundle Type" hint="e.g. Kit, Gift Set">
-                      <input type="text" name="bundle_type" value={form.bundle_type} onChange={handleChange}
-                        className={inputCls(false)} placeholder="Kit" />
-                    </Field>
+                    <DynamicReferenceSelect
+                      label="Bundle Type"
+                      referenceType="BUNDLE_TYPE"
+                      value={form.bundle_type}
+                      onChange={(val) => set('bundle_type', val)}
+                      placeholder="Select bundle (e.g. Single, Combo, Gifting)"
+                    />
+                    <DynamicReferenceSelect
+                      label="Pack Type"
+                      referenceType="PACK_TYPE"
+                      value={form.pack_type}
+                      onChange={(val) => set('pack_type', val)}
+                      placeholder="Select pack (e.g. Finished, Raw+Package)"
+                    />
                   </FieldRow>
-                  <Field label="Pack Type" hint="e.g. Box, Tube, Pouch, Bottle">
-                    <input type="text" name="pack_type" value={form.pack_type} onChange={handleChange}
-                      className={inputCls(false)} placeholder="Bottle" />
-                  </Field>
                 </>
               )}
 
               {/* TAX & COMPLIANCE */}
               {activeTab === 'tax' && (
                 <FieldRow>
-                  <Field label="Tax Rule Code" hint="e.g. GST_18, GST_12">
+                  <Field label="Tax Rule Code (HSN)" error={errors.tax_rule_code}>
                     <input type="text" name="tax_rule_code" value={form.tax_rule_code} onChange={handleChange}
-                      className={cn(inputCls(false), "font-mono")} placeholder="GST_18" />
+                      className={cn(inputCls(errors.tax_rule_code), "font-mono")} placeholder="HSN-8517" />
                   </Field>
                   <Field label="Tax %">
                     <input type="number" name="tax_percent" value={form.tax_percent} onChange={handleChange}

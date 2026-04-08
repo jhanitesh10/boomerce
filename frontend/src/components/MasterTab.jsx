@@ -30,7 +30,7 @@ const BASE_COLS = [
   { id: 'actions',            label: '',         width: 44,  align: 'center', noInline: true, sticky: true, stickyLeft: 0 },
   { id: 'primary_image_url',  label: 'Image',    width: 68,  align: 'center', noInline: true, sticky: true, stickyLeft: 44 },
   { id: 'product_name',       label: 'Product',  width: 260, sortable: true,  sticky: true, stickyLeft: 112 },
-  { id: 'barcode',            label: 'Barcode',  width: 130, isMono: true,    sticky: true, stickyLeft: 372 },
+  { id: 'barcode',            label: 'SKU / EAN / Barcode ID',  width: 160, isMono: true,    sticky: true, stickyLeft: 372 },
 ];
 
 const REMARKS_COL = { id: 'remark', label: 'Notes', width: 62, align: 'center', sticky: true, isRight: true };
@@ -64,7 +64,6 @@ const GROUPS = [
   {
     id: 'bundling', label: 'Product & Bundle', color: 'amber',
     cols: [
-      { id: 'product_type',                 label: 'Prod Type',    width: 120 },
       { id: 'bundle_type',                  label: 'Bundle Type',  width: 120 },
       { id: 'pack_type',                    label: 'Pack Type',    width: 115 },
       { id: 'product_component_group_code', label: 'Group Code',   width: 120, isMono: true },
@@ -74,7 +73,7 @@ const GROUPS = [
      id: 'tax', label: 'Tax & Compliance', color: 'blue',
      cols: [
        { id: 'tax_percent',    label: 'Tax %',    width: 82,  align: 'right' },
-       { id: 'tax_rule_code',  label: 'Tax Rule', width: 110, isMono: true },
+       { id: 'tax_rule_code',  label: 'Tax Rule (HSN)', width: 110, isMono: true },
      ]
   },
   {
@@ -106,7 +105,14 @@ const GC = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const NON_INLINE = new Set(['primary_image_url', 'net_content', 'content_trigger', 'catalog_url', 'remark']);
-const REF_MAP    = { brand_reference_id:'BRAND', category_reference_id:'CATEGORY', sub_category_reference_id:'SUB_CATEGORY', status_reference_id:'STATUS' };
+const REF_MAP    = { 
+  brand_reference_id: 'BRAND', 
+  category_reference_id: 'CATEGORY', 
+  sub_category_reference_id: 'SUB_CATEGORY', 
+  status_reference_id: 'STATUS',
+  bundle_type: 'BUNDLE_TYPE',
+  pack_type: 'PACK_TYPE'
+};
 const FILTER_TABS = [
   { key: 'all',            icon: LayoutGrid, label: (c, t) => `All (${t})` },
   { key: 'draft',          icon: FileEdit,   label: c => `Draft (${c['draft'] || 0})` },
@@ -211,8 +217,8 @@ function NotePopover({ sku, onSave, onClose, onDraftChange }) {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function MasterTab() {
   const [skus,           setSkus]           = useState([]);
-  const [references,     setReferences]     = useState({ BRAND:{}, CATEGORY:{}, STATUS:{}, SUB_CATEGORY:{} });
-  const [refLists,       setRefLists]       = useState({ BRAND:[], CATEGORY:[], STATUS:[], SUB_CATEGORY:[] });
+  const [references,     setReferences]     = useState({ BRAND:{}, CATEGORY:{}, STATUS:{}, SUB_CATEGORY:{}, BUNDLE_TYPE:{}, PACK_TYPE:{} });
+  const [refLists,       setRefLists]       = useState({ BRAND:[], CATEGORY:[], STATUS:[], SUB_CATEGORY:[], BUNDLE_TYPE:[], PACK_TYPE:[] });
   const [loading,        setLoading]        = useState(true);
   const [search,         setSearch]         = useState('');
   const [statusFilter,   setStatusFilter]   = useState('all');
@@ -233,7 +239,6 @@ export default function MasterTab() {
     statusIds: [],
     minPrice: '',
     maxPrice: '',
-    productType: '',
     hasImage: null,
     hasNotes: null,
   };
@@ -246,7 +251,6 @@ export default function MasterTab() {
     if (filters.statusIds?.length) count += filters.statusIds.length;
     if (filters.minPrice !== '') count += 1;
     if (filters.maxPrice !== '') count += 1;
-    if (filters.productType !== '') count += 1;
     if (filters.hasImage !== null) count += 1;
     if (filters.hasNotes !== null) count += 1;
     return count;
@@ -268,18 +272,34 @@ export default function MasterTab() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [skuData, brands, cats, statuses] = await Promise.all([
+      const [skuData, brands, cats, statuses, bundles, packs] = await Promise.all([
         skuApi.getAll(),
         refApi.getAll('BRAND'),
         refApi.getAll('CATEGORY'),
-        refApi.getAll('STATUS')
+        refApi.getAll('STATUS'),
+        refApi.getAll('BUNDLE_TYPE'),
+        refApi.getAll('PACK_TYPE')
       ]);
       let subcats = [];
       try { subcats = await refApi.getAll('SUB_CATEGORY'); } catch { /* ignore */ }
-      const toMap = arr => arr.reduce((a, r) => ({ ...a, [r.id]: r.label }), {});
+      const toMap = arr => (arr || []).reduce((a, r) => ({ ...a, [r.id]: r.label }), {});
       setSkus(skuData || []);
-      setReferences({ BRAND: toMap(brands), CATEGORY: toMap(cats), STATUS: toMap(statuses), SUB_CATEGORY: toMap(subcats) });
-      setRefLists({ BRAND: brands, CATEGORY: cats, STATUS: statuses, SUB_CATEGORY: subcats });
+      setReferences({ 
+        BRAND: toMap(brands), 
+        CATEGORY: toMap(cats), 
+        STATUS: toMap(statuses), 
+        SUB_CATEGORY: toMap(subcats),
+        BUNDLE_TYPE: toMap(bundles),
+        PACK_TYPE: toMap(packs)
+      });
+      setRefLists({ 
+        BRAND: brands, 
+        CATEGORY: cats, 
+        STATUS: statuses, 
+        SUB_CATEGORY: subcats,
+        BUNDLE_TYPE: bundles,
+        PACK_TYPE: packs
+      });
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   }, []);
@@ -369,10 +389,7 @@ export default function MasterTab() {
     if (filters.minPrice !== '' && price < parseFloat(filters.minPrice)) return false;
     if (filters.maxPrice !== '' && price > parseFloat(filters.maxPrice)) return false;
 
-    // 8. Product Type
-    if (filters.productType !== '' && s.product_type !== filters.productType) return false;
-
-    // 9. Boolean / Quality Checks
+    // 8. Boolean / Quality Checks
     if (filters.hasImage === true && !s.primary_image_url) return false;
     if (filters.hasImage === false && s.primary_image_url) return false;
     
@@ -457,6 +474,8 @@ export default function MasterTab() {
       case 'brand_reference_id':        return <span className="text-sm text-[var(--color-foreground)]">{references.BRAND[val] || '—'}</span>;
       case 'category_reference_id':     return <span className="text-sm text-[var(--color-muted-foreground)]">{references.CATEGORY[val] || '—'}</span>;
       case 'sub_category_reference_id': return <span className="text-sm text-[var(--color-muted-foreground)]">{references.SUB_CATEGORY[val] || '—'}</span>;
+      case 'bundle_type':               return <span className="text-sm text-[var(--color-foreground)] font-medium">{references.BUNDLE_TYPE[val] || val || '—'}</span>;
+      case 'pack_type':                 return <span className="text-sm text-[var(--color-muted-foreground)]">{references.PACK_TYPE[val] || val || '—'}</span>;
       case 'net_content':  return <span className="text-sm text-[var(--color-muted-foreground)]">{sku.net_content_value ? `${sku.net_content_value} ${sku.net_content_unit||''}` : '—'}</span>;
       case 'tax_percent':  return <span className="text-sm text-[var(--color-muted-foreground)]">{val!=null ? `${val}%` : '—'}</span>;
       case 'catalog_url':  return val ? <a href={val} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="text-xs text-[var(--color-primary)] underline underline-offset-2 truncate block">Link ↗</a> : <span className="text-xs text-[var(--color-muted-foreground)]">—</span>;
@@ -839,7 +858,7 @@ export default function MasterTab() {
         </div>
       </div>
 
-      {isFormOpen && <SkuMasterForm initialData={editingSku} onClose={()=>setIsFormOpen(false)} onSaved={()=>{setIsFormOpen(false);loadAll();}}/>}
+      {isFormOpen && <SkuMasterForm initialData={editingSku} statusOptions={refLists.STATUS} onClose={()=>setIsFormOpen(false)} onSaved={()=>{setIsFormOpen(false);loadAll();}}/>}
       {isExportOpen && <ExportSlideOver skus={skus} filtered={filtered} paginated={paginated} references={references} onClose={()=>setIsExportOpen(false)} />}
       {isImportOpen && <ImportSlideOver skus={skus} refLists={refLists} onClose={()=>setIsImportOpen(false)} onImportComplete={()=>{setIsImportOpen(false);loadAll();}} />}
 

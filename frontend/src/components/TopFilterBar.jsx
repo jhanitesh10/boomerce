@@ -23,7 +23,6 @@ export default function TopFilterBar({
     filters.statusIds?.length > 0 || 
     filters.minPrice !== '' || 
     filters.maxPrice !== '' || 
-    filters.productType !== '' ||
     filters.hasImage !== null || 
     filters.hasNotes !== null
   , [filters]);
@@ -67,11 +66,7 @@ export default function TopFilterBar({
             onChange={(ids) => onFilterChange({ subCategoryIds: ids })}
           />
 
-          {/* Product Type */}
-          <TypeDropdown 
-            value={filters.productType}
-            onChange={(val) => onFilterChange({ productType: val })}
-          />
+
 
           {/* Price Range */}
           <PriceRangeFilter 
@@ -132,9 +127,7 @@ export default function TopFilterBar({
               return sc ? <ActiveChip key={`sc-${id}`} label={sc.label} onRemove={() => onFilterChange({ subCategoryIds: filters.subCategoryIds.filter(x => x !== id) })} /> : null;
             })}
 
-            {filters.productType && (
-              <ActiveChip label={`Type: ${filters.productType}`} onRemove={() => onFilterChange({ productType: '' })} />
-            )}
+
 
             {(filters.minPrice || filters.maxPrice) && (
               <ActiveChip 
@@ -271,71 +264,7 @@ function FilterDropdown({ label, icon: Icon, options, selectedIds, onChange, dis
   );
 }
 
-function TypeDropdown({ value, onChange }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef(null);
 
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (containerRef.current && !containerRef.current.contains(e.target)) setIsOpen(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const types = ['Raw', 'Package', 'Finished'];
-
-  return (
-    <div className="relative" ref={containerRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={cn(
-          "h-[34px] px-3 rounded-xl border flex items-center gap-2 transition-all text-xs font-bold whitespace-nowrap",
-          value !== '' 
-            ? "bg-[var(--color-primary)]/10 border-[var(--color-primary)]/20 text-[var(--color-primary)]" 
-            : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-        )}
-      >
-        <Package size={14} strokeWidth={2.5} />
-        <span>Type</span>
-        {value !== '' && (
-          <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-[var(--color-primary)] text-white text-[10px] font-black rounded-full tabular-nums">
-            1
-          </span>
-        )}
-        <ChevronDown size={14} className={cn("text-slate-400 transition-transform", isOpen && "rotate-180")} />
-      </button>
-
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl z-[150] overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-top p-1.5">
-          {types.map(type => (
-            <div 
-              key={type}
-              onClick={() => { onChange(value === type ? '' : type); setIsOpen(false); }}
-              className={cn(
-                "flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-all group mb-0.5",
-                value === type ? "bg-[var(--color-primary)] text-white shadow-md shadow-[var(--color-primary)]/10" : "hover:bg-slate-50"
-              )}
-            >
-              <span className={cn("text-xs font-bold", value === type ? "text-white" : "text-slate-700 uppercase tracking-tight")}>
-                {type}
-              </span>
-              {value === type && <Check size={14} className="text-white" strokeWidth={3} />}
-            </div>
-          ))}
-          {value !== '' && (
-            <button 
-              onClick={() => { onChange(''); setIsOpen(false); }}
-              className="w-full py-2 mt-1 text-[10px] font-black uppercase tracking-widest text-red-500 bg-red-50 hover:bg-red-100 transition-colors border border-red-100 rounded-lg"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function PriceRangeFilter({ min, max, onChange }) {
   return (

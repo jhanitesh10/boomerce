@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { skuApi, refApi } from '../api';
 
 const FIELD_LABELS = {
-  product_name: "Product Name", sku_code: "SKU Code*", barcode: "Barcode", brand_reference_id: "Brand", 
+  product_name: "Product Name", sku_code: "SKU / EAN / Barcode ID*", barcode: "SKU / EAN / Barcode ID", brand_reference_id: "Brand", 
   product_component_group_code: "Component Group Code", primary_image_url: "Image URL",
   description: "Description", key_feature: "Key Features", key_ingredients: "Key Ingredients", 
   ingredients: "Ingredients", how_to_use: "How To Use", product_care: "Product Care", 
@@ -15,8 +15,8 @@ const FIELD_LABELS = {
   mrp: "MRP", purchase_cost: "Purchase Cost", net_content_value: "Net Content Value", 
   net_content_unit: "Net Content Unit", color: "Color", raw_product_size: "Raw Product Size", 
   package_size: "Package Size", package_weight: "Package Wt (g)", raw_product_weight: "Raw Product Wt", 
-  finished_product_weight: "Finished Product Wt", product_type: "Product Type", 
-  bundle_type: "Bundle Type", pack_type: "Pack Type", tax_rule_code: "Tax Rule Code", tax_percent: "Tax Percent"
+  finished_product_weight: "Finished Product Wt",
+  bundle_type: "Bundle Type", pack_type: "Pack Type", tax_rule_code: "Tax Rule Code (HSN)", tax_percent: "Tax Percent"
 };
 
 const SYSTEM_FIELDS = Object.entries(FIELD_LABELS).map(([k, v]) => ({ id: k, label: v }));
@@ -174,7 +174,9 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
       BRAND: [...(refLists.BRAND || [])],
       CATEGORY: [...(refLists.CATEGORY || [])],
       SUB_CATEGORY: [...(refLists.SUB_CATEGORY || [])],
-      STATUS: [...(refLists.STATUS || [])]
+      STATUS: [...(refLists.STATUS || [])],
+      BUNDLE_TYPE: [...(refLists.BUNDLE_TYPE || [])],
+      PACK_TYPE: [...(refLists.PACK_TYPE || [])]
     };
     
     const resolveRef = async (type, labelValue, parentId = null) => {
@@ -211,10 +213,10 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
          mappedPayload.brand_reference_id = await resolveRef('BRAND', mappedPayload.brand_reference_id);
          mappedPayload.category_reference_id = await resolveRef('CATEGORY', mappedPayload.category_reference_id);
          
-         // For sub-category, we pass the category as parent if it exists
          mappedPayload.sub_category_reference_id = await resolveRef('SUB_CATEGORY', mappedPayload.sub_category_reference_id, mappedPayload.category_reference_id);
-         
          mappedPayload.status_reference_id = await resolveRef('STATUS', mappedPayload.status_reference_id);
+         mappedPayload.bundle_type = await resolveRef('BUNDLE_TYPE', mappedPayload.bundle_type);
+         mappedPayload.pack_type = await resolveRef('PACK_TYPE', mappedPayload.pack_type);
 
          // Clean numeric fields
          ['mrp', 'purchase_cost', 'package_weight', 'raw_product_weight', 'finished_product_weight', 'net_content_value', 'tax_percent'].forEach(k => {

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 const FIELD_LABELS = {
-  product_name: "Product Name", sku_code: "SKU Code", barcode: "Barcode", brand_reference_id: "Brand", 
+  product_name: "Product Name", sku_code: "SKU / EAN / Barcode ID", barcode: "SKU / EAN / Barcode ID", brand_reference_id: "Brand", 
   product_component_group_code: "Component Group Code", primary_image_url: "Image URL",
   description: "Description", key_feature: "Key Features", key_ingredients: "Key Ingredients", 
   ingredients: "Ingredients", how_to_use: "How To Use", product_care: "Product Care", 
@@ -13,8 +13,8 @@ const FIELD_LABELS = {
   mrp: "MRP", purchase_cost: "Purchase Cost", net_content_value: "Net Content Value", 
   net_content_unit: "Net Content Unit", color: "Color", raw_product_size: "Raw Product Size", 
   package_size: "Package Size", package_weight: "Package Wt (g)", raw_product_weight: "Raw Product Wt", 
-  finished_product_weight: "Finished Product Wt", product_type: "Product Type", 
-  bundle_type: "Bundle Type", pack_type: "Pack Type", tax_rule_code: "Tax Rule Code", tax_percent: "Tax Percent",
+  finished_product_weight: "Finished Product Wt",
+  bundle_type: "Bundle Type", pack_type: "Pack Type", tax_rule_code: "Tax Rule Code (HSN)", tax_percent: "Tax Percent",
   // additional raw fields:
   created_at: "Created At", updated_at: "Updated At"
 };
@@ -24,7 +24,7 @@ const GROUPS = [
   { id: 'classification', label: 'Classification', fields: ['status_reference_id', 'category_reference_id', 'sub_category_reference_id'] },
   { id: 'pricing', label: 'Pricing & Specs', fields: ['mrp', 'purchase_cost', 'net_content_value', 'net_content_unit', 'color', 'raw_product_size', 'package_size', 'package_weight', 'raw_product_weight', 'finished_product_weight'] },
   { id: 'content', label: 'Content', fields: ['description', 'key_feature', 'key_ingredients', 'ingredients', 'how_to_use', 'product_care', 'caution', 'seo_keywords', 'catalog_url'] },
-  { id: 'bundling', label: 'Product & Bundle', fields: ['product_type', 'bundle_type', 'pack_type'] },
+  { id: 'bundling', label: 'Product & Bundle', fields: ['bundle_type', 'pack_type'] },
   { id: 'tax', label: 'Tax & Compliance', fields: ['tax_rule_code', 'tax_percent'] }
 ];
 
@@ -94,6 +94,8 @@ export default function ExportSlideOver({ onClose, skus = [], filtered = [], pag
     if (fId === 'category_reference_id') return references?.CATEGORY?.[rawValue] || rawValue || '';
     if (fId === 'sub_category_reference_id') return references?.SUB_CATEGORY?.[rawValue] || rawValue || '';
     if (fId === 'status_reference_id') return references?.STATUS?.[rawValue] || rawValue || '';
+    if (fId === 'bundle_type') return references?.BUNDLE_TYPE?.[rawValue] || rawValue || '';
+    if (fId === 'pack_type') return references?.PACK_TYPE?.[rawValue] || rawValue || '';
     
     return rawValue === null || rawValue === undefined ? '' : String(rawValue);
   };
