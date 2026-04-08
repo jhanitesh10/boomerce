@@ -935,26 +935,55 @@ export default function MasterTab({ isMobile }) {
                 })}
               </tbody>
             </table>
+        </div>
+      </div>
+    )}
+
+      {/* Pagination Footer - Visible on both Desktop and Mobile */}
+      <div className="mt-4 bg-[var(--color-card)] rounded-xl border border-[var(--color-border)] shadow-sm px-4 sm:px-5 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3 text-xs text-[var(--color-muted-foreground)]">
+          <span>Showing {Math.min((page-1)*pageSize+1,filtered.length)}–{Math.min(page*pageSize,filtered.length)} of {filtered.length}</span>
+          <select 
+            value={pageSize} 
+            onChange={e=>{setPageSize(Number(e.target.value));setPage(1);}} 
+            className="border border-[var(--color-border)] rounded-md bg-[var(--color-card)] text-[var(--color-foreground)] text-xs px-1.5 py-1 outline-none cursor-pointer"
+          >
+            {PAGE_SIZE_OPTIONS.map(n=><option key={n} value={n}>{n} / page</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-1">
+          <button 
+            onClick={()=>setPage(p=>Math.max(1,p-1))} 
+            disabled={page===1} 
+            className="flex items-center justify-center w-8 h-8 rounded-lg border border-[var(--color-border)] text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronLeft size={15}/>
+          </button>
+          
+          <div className="flex items-center gap-1">
+            {pageNums.map((n,i)=>n==='…'
+              ? <span key={`g${i}`} className="px-1 text-xs text-[var(--color-muted-foreground)]">…</span>
+              : <button 
+                  key={n} 
+                  onClick={()=>setPage(n)} 
+                  className={cn(
+                    "flex items-center justify-center w-8 h-8 rounded-lg border text-xs transition-colors", 
+                    page===n ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white font-semibold" : "border-[var(--color-border)] text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)]"
+                  )}
+                >
+                  {n}
+                </button>)}
           </div>
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--color-border)]">
-            <div className="flex items-center gap-3 text-xs text-[var(--color-muted-foreground)]">
-              <span>Showing {Math.min((page-1)*pageSize+1,filtered.length)}–{Math.min(page*pageSize,filtered.length)} of {filtered.length}</span>
-              <select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setPage(1);}} className="border border-[var(--color-border)] rounded-md bg-[var(--color-card)] text-[var(--color-foreground)] text-xs px-1.5 py-1 outline-none cursor-pointer">
-                {PAGE_SIZE_OPTIONS.map(n=><option key={n} value={n}>{n} / page</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-1">
-              <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1} className="flex items-center justify-center w-8 h-8 rounded-lg border border-[var(--color-border)] text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronLeft size={15}/></button>
-              {pageNums.map((n,i)=>n==='…'
-                ? <span key={`g${i}`} className="px-1 text-xs text-[var(--color-muted-foreground)]">…</span>
-                : <button key={n} onClick={()=>setPage(n)} className={cn("flex items-center justify-center w-8 h-8 rounded-lg border text-xs transition-colors", page===n?"bg-[var(--color-primary)] border-[var(--color-primary)] text-white font-semibold":"border-[var(--color-border)] text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)]")}>{n}</button>)}
-              <button onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages} className="flex items-center justify-center w-8 h-8 rounded-lg border border-[var(--color-border)] text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronRight size={15}/></button>
-            </div>
-          </div>
+          <button 
+            onClick={()=>setPage(p=>Math.min(totalPages,p+1))} 
+            disabled={page===totalPages} 
+            className="flex items-center justify-center w-8 h-8 rounded-lg border border-[var(--color-border)] text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronRight size={15}/>
+          </button>
         </div>
-      )}
+      </div>
 
       {isFormOpen && <SkuMasterForm initialData={editingSku} statusOptions={refLists.STATUS} onClose={()=>setIsFormOpen(false)} onSaved={()=>{setIsFormOpen(false);loadAll();}}/>}
       {isExportOpen && <ExportSlideOver skus={skus} filtered={filtered} paginated={paginated} references={references} onClose={()=>setIsExportOpen(false)} />}
