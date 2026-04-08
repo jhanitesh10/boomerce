@@ -240,6 +240,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Bloomerce Relational API", lifespan=lifespan)
 
+@app.get("/")
+def health_check():
+    return {"status": "ok", "message": "Backend is reached"}
+
+
 @app.exception_handler(IntegrityError)
 async def integrity_exception_handler(request, exc):
     from fastapi import JSONResponse
