@@ -11,6 +11,7 @@ export default function DynamicReferenceSelect({
   onBlur,
   placeholder = "Select option...",
   preloadedOptions = null,
+  parentId = null,
   className
 }) {
   const [options, setOptions] = useState(preloadedOptions || []);
@@ -56,7 +57,8 @@ export default function DynamicReferenceSelect({
       const newRef = await refApi.create({
         reference_data_type: referenceType,
         label: search.trim(),
-        key: `${referenceType.toLowerCase()}_${Date.now()}`
+        key: `${referenceType.toLowerCase()}_${Date.now()}`,
+        parent_reference_id: parentId
       });
       setOptions([...options, newRef]);
       onChange(newRef.id);
@@ -69,15 +71,17 @@ export default function DynamicReferenceSelect({
     }
   };
 
-  const filteredOptions = options.filter(opt =>
-    opt.label.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredOptions = options.filter(opt => {
+    const matchesSearch = opt.label.toLowerCase().includes(search.toLowerCase());
+    const matchesParent = parentId ? Number(opt.parent_reference_id) === Number(parentId) : true;
+    return matchesSearch && matchesParent;
+  });
 
   const showCreateOption = search.trim() && !options.some(
     opt => opt.label.toLowerCase() === search.trim().toLowerCase()
   );
 
-  const selectedOption = options.find(opt => opt.id === value);
+  const selectedOption = options.find(opt => Number(opt.id) === Number(value));
 
   return (
     <div className={cn("relative w-full", className)} ref={dropdownRef}>

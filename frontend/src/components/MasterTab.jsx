@@ -463,6 +463,11 @@ export default function MasterTab() {
           {val ? <img src={val} alt="sku" className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center bg-[var(--color-muted)]"><ImageIcon size={16} className="text-[var(--color-muted-foreground)]"/></div>}
         </div>
       );
+      case 'barcode': return (
+        <span className="font-mono text-xs font-semibold text-[var(--color-foreground)] truncate">
+          {sku.sku_code || sku.barcode || ''}
+        </span>
+      );
       case 'product_name': return (
         <div className="flex flex-col gap-1 min-w-0">
           <span className="font-medium text-[var(--color-foreground)]/85 text-[13.5px] leading-snug whitespace-normal break-words line-clamp-2" title={val}>

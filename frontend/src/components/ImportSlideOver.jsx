@@ -200,10 +200,14 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
       }
     };
 
-    for(let i=0; i<csvData.length; i++) {
-       const mappedPayload = getMappedRow(csvData[i]);
-       
-       if(!mappedPayload.sku_code || !mappedPayload.sku_code.trim()) {
+       for(let i=0; i<csvData.length; i++) {
+         const mappedPayload = getMappedRow(csvData[i]);
+         
+         // Force SKU and Barcode to be identical as per user instruction
+         if (mappedPayload.sku_code) mappedPayload.barcode = mappedPayload.sku_code;
+         else if (mappedPayload.barcode) mappedPayload.sku_code = mappedPayload.barcode;
+
+         if(!mappedPayload.sku_code || !mappedPayload.sku_code.trim()) {
           skipped++;
           continue; // mandatory
        }

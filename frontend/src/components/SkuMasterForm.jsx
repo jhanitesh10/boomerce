@@ -302,6 +302,14 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
         const v = initialData[k];
         base[k] = v != null ? v : EMPTY[k];
       }
+    } else {
+      // Default to 'Draft' status for new products
+      const draftRef = Object.entries(refLists?.STATUS || {}).find(([id, label]) => 
+        label?.toLowerCase() === 'draft'
+      );
+      if (draftRef) {
+        base.status_reference_id = Number(draftRef[0]);
+      }
     }
     return base;
   })());
@@ -360,6 +368,9 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
         'finished_product_weight', 'net_content_value', 'tax_percent'].forEach(k => {
         payload[k] = payload[k] === '' ? null : Number(payload[k]) || null;
       });
+      // Force SKU and Barcode to be identical as per user instruction
+      payload.barcode = payload.sku_code;
+      
       if (initialData?.id) await skuApi.update(initialData.id, payload);
       else await skuApi.create(payload);
       savedSnapshot.current = { ...form };
@@ -545,10 +556,11 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
                   <FieldRow>
                     <Field label="Category">
                       <DynamicReferenceSelect label="" referenceType="CATEGORY" value={form.category_reference_id}
-                        onChange={(v) => set('category_reference_id', v)} placeholder="Select or add category…" />
+                        onChange={(v) => { set('category_reference_id', v); set('sub_category_reference_id', null); }} placeholder="Select or add category…" />
                     </Field>
                     <Field label="Sub-Category">
                       <DynamicReferenceSelect label="" referenceType="SUB_CATEGORY" value={form.sub_category_reference_id}
+                        parentId={form.category_reference_id}
                         onChange={(v) => set('sub_category_reference_id', v)} placeholder="Select or add sub-category…" />
                     </Field>
                   </FieldRow>

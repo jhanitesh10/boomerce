@@ -14,6 +14,7 @@ import models
 import schemas
 from database import engine, get_db, SessionLocal
 
+from sqlalchemy.exc import IntegrityError
 models.Base.metadata.create_all(bind=engine)
 
 def seed_mock_data():
@@ -232,6 +233,11 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Bloomerce Relational API", lifespan=lifespan)
+
+@app.exception_handler(IntegrityError)
+async def integrity_exception_handler(request, exc):
+    from fastapi import JSONResponse
+    return JSONResponse(status_code=400, content={"detail": f"Database Integrity Error: {str(exc.orig)}"})
 
 os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
