@@ -1,7 +1,13 @@
 import axios from 'axios';
 
+const rawBaseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+// Automatically append /api if the user forgot to include it in their environment variable
+const baseURL = rawBaseURL.endsWith('/api') || rawBaseURL.endsWith('/api/') 
+  ? rawBaseURL 
+  : `${rawBaseURL.replace(/\/$/, '')}/api`;
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api', 
+  baseURL,
 });
 
 export const skuApi = {
