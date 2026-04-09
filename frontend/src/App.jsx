@@ -68,8 +68,8 @@ function App() {
       {isMobile && (
         <header className="fixed top-0 left-0 right-0 h-16 bg-[var(--color-sidebar)] border-b border-[var(--color-border)] z-[60] flex items-center justify-between px-4 shadow-sm">
           <div className="flex items-center gap-2.5">
-            <img src="/bloomerce_logo.svg" alt="Bloomerce" className="h-6 w-6" />
-            <div className="text-[15px] font-bold tracking-tight">
+            <img src="/bloomerce_logo.svg" alt="Bloomerce" className="h-7 w-7" />
+            <div className="text-[17px] font-extrabold tracking-tight leading-none">
               <span className="text-[var(--color-primary)]">Bloom</span>
               <span className="text-[var(--color-foreground)]">erce</span>
             </div>
@@ -111,14 +111,14 @@ function App() {
         )}
       >
         {/* Brand Section */}
-        <div className="flex items-center justify-between px-6 py-4 min-h-[72px]">
+        <div className="flex items-center justify-between px-5 py-4 min-h-[72px]">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
-              <img src="/bloomerce_logo.svg" alt="Bloomerce" className="h-7 w-7 object-contain" />
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-[var(--color-primary)]/8">
+              <img src="/bloomerce_logo.svg" alt="Bloomerce" className="h-8 w-8 object-contain" />
             </div>
             {(isSidebarOpen || isHovered || isMobile) && (
               <div className="flex flex-col leading-tight animate-in fade-in slide-in-from-left-2 duration-300">
-                <div className="text-[17px] font-semibold tracking-tight">
+                <div className="text-[19px] font-extrabold tracking-tight leading-none">
                   <span className="text-[var(--color-primary)]">Bloom</span>
                   <span className="text-[var(--color-foreground)]">erce</span>
                 </div>
