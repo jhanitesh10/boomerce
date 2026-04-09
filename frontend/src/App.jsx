@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import './index.css';
 
 const NAV_ITEMS = [
-  { key: 'prompt', label: 'Prompt Master', icon: Sparkles, description: 'LLM & Product Logic' },
+  { key: 'prompt', label: 'Products Master', icon: Sparkles, description: 'LLM & Product Logic' },
   { key: 'inventory', label: 'Inventory Management', icon: Package, description: 'Stock & Warehouse' },
   { key: 'sales', label: 'Sales Analysis', icon: BarChart3, description: 'Metrics & Insights' },
 ];

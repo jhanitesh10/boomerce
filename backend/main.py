@@ -2,7 +2,10 @@ import os
 import uuid
 from fastapi import FastAPI, Depends, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+import zipfile
+import io
 from sqlalchemy.orm.attributes import flag_modified
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
@@ -487,3 +490,105 @@ def trash_sku_catalog_folder(id: int, db: Session = Depends(get_db)):
         db.refresh(sku)
     
     return sku
+@app.post("/api/skus/export-images")
+async def export_sku_images(data: schemas.ImageExportRequest, db: Session = Depends(get_db)):
+    drive = DriveService()
+    if not drive.service:
+        raise HTTPException(status_code=500, detail="Drive service not initialized")
+
+    def get_label(ref_id):
+        if not ref_id: return "Unknown"
+        ref = db.query(models.ReferenceData).filter(models.ReferenceData.id == ref_id).first()
+        return ref.label if ref else "Unknown"
+
+    print(f"Export Images: Starting for {len(data.sku_ids)} SKUs")
+    
+    # Memory buffer for ZIP
+    zip_buffer = io.BytesIO()
+    total_files_added = 0
+    
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED, False) as zip_file:
+        for sku_id in data.sku_ids:
+            sku = db.query(models.SkuMaster).filter(models.SkuMaster.id == sku_id).first()
+            if not sku:
+                print(f"Export: SKU ID {sku_id} not found")
+                continue
+            if not sku.catalog_url:
+                print(f"Export: SKU {sku.sku_code} has no catalog_url")
+                continue
+
+            folder_id = drive.get_id_from_url(sku.catalog_url)
+            if not folder_id:
+                print(f"Export: Invalid folder URL for SKU {sku.sku_code}")
+                continue
+
+            # Fetch file list
+            files = drive.list_files_in_folder(folder_id)
+            if not files:
+                print(f"Export: No files found in Drive folder for SKU {sku.sku_code}")
+                continue
+
+            # Context for template resolution
+            context = {
+                "sku_code": sku.sku_code or "no_sku",
+                "barcode": sku.barcode or "no_barcode",
+                "brand": get_label(sku.brand_reference_id),
+                "category": get_label(sku.category_reference_id),
+                "sub_category": get_label(sku.sub_category_reference_id),
+                "product_name": sku.product_name or "no_name"
+            }
+
+            def resolve_template(tmpl, ctx, idx=0):
+                res = tmpl
+                for k, v in ctx.items():
+                    res = res.replace("{{ " + k + " }}", str(v)).replace("{{" + k + "}}", str(v))
+                res = res.replace("{{ index }}", str(idx)).replace("{{index}}", str(idx))
+                # Sanitize path segments, filter out empty parts
+                segments = [drive.sanitize_name(p) for p in res.split("/") if p.strip()]
+                return "/".join(segments)
+
+            # Process files
+            print(f"Export: Processing {len(files)} files for SKU {sku.sku_code}")
+            for idx, f in enumerate(files, 1):
+                content = drive.get_file_content(f['id'])
+                if not content:
+                    continue
+
+                # Determine target path
+                if data.flatten_hierarchy:
+                    folder_path = drive.sanitize_name(sku.sku_code or str(sku_id))
+                else:
+                    folder_path = resolve_template(data.folder_template, context)
+                
+                # Determine filename
+                file_ext = f['name'].split('.')[-1] if '.' in f['name'] else 'bin'
+                filename = resolve_template(data.file_template, context, idx)
+                if not filename.endswith(f".{file_ext}"):
+                    filename = f"{filename}.{file_ext}"
+                
+                # Ensure path is valid and relative (not absolute)
+                full_path = "/".join(p for p in f"{folder_path}/{filename}".split("/") if p)
+                
+                zip_file.writestr(full_path, content)
+                total_files_added += 1
+
+    print(f"Export: ZIP complete. Total files added: {total_files_added}")
+
+    if total_files_added == 0:
+        raise HTTPException(
+            status_code=404, 
+            detail="No images found for the selected products to export. Ensure catalog URLs are correct and folders contain files."
+        )
+
+    # Prepare response using a generator for stable streaming of binary data
+    def iter_buffer():
+        zip_buffer.seek(0)
+        while chunk := zip_buffer.read(8192):
+            yield chunk
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    return StreamingResponse(
+        iter_buffer(), 
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="Bloomerce_Images_{timestamp}.zip"'}
+    )

@@ -92,3 +92,10 @@ class DriveFolderCreate(BaseModel):
     category_name: str
     sub_category_name: str
     sku_code: str
+
+class ImageExportRequest(BaseModel):
+    sku_ids: List[int]
+    folder_template: str = "{{brand}}/{{sku_code}}"
+    file_template: str = "{{sku_code}}_{{index}}"
+    flatten_hierarchy: bool = False
+    include_all_files: bool = True

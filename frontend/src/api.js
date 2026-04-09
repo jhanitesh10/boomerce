@@ -20,6 +20,7 @@ export const skuApi = {
   generateCatalogUrl: (id) => api.post(`/skus/${id}/generate-catalog-url`).then(res => res.data),
   generateCatalogUrlPreview: (data) => api.post(`/skus/generate-catalog-url`, data).then(res => res.data),
   trashCatalogFolder: (id) => api.post(`/skus/${id}/trash-catalog-folder`).then(res => res.data),
+  exportImages: (data) => api.post('/skus/export-images', data, { responseType: 'blob' }).then(res => res.data),
 };
 
 export const refApi = {

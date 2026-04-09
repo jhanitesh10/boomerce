@@ -31,11 +31,11 @@ class DriveService:
         if not name: return ""
         # 1. Lowercase
         s = name.strip().lower()
-        # 2. Remove special characters (keep only a-z, 0-9, spaces, and underscores)
-        s = re.sub(r'[^a-z0-9\s_]', '', s)
+        # 2. Keep only a-z, 0-9, spaces, underscores, and dots (important for filenames)
+        s = re.sub(r'[^a-z0-9\s_\.]', '', s)
         # 3. Replace one or more spaces/white-space with a single underscore
         s = re.sub(r'\s+', '_', s)
-        return s
+        return s or "unnamed"
 
     def get_or_create_folder(self, name, parent_id):
         if not self.service:
@@ -95,16 +95,54 @@ class DriveService:
             return False
         
         try:
-            # Extract ID from URL
-            # Format: https://drive.google.com/drive/folders/ID
-            match = re.search(r'folders/([a-zA-Z0-9_-]+)', folder_url)
-            if not match:
+            folder_id = self.get_id_from_url(folder_url)
+            if not folder_id:
                 return False
             
-            folder_id = match.group(1)
             # Move to trash
             self.service.files().update(fileId=folder_id, body={'trashed': True}).execute()
             return True
         except Exception as e:
             print(f"Error trashing folder: {e}")
             return False
+
+    def get_id_from_url(self, url):
+        if not url: return None
+        # Extract ID from URL
+        # Format: https://drive.google.com/drive/folders/ID
+        match = re.search(r'folders/([a-zA-Z0-9_-]+)', url)
+        if match:
+            return match.group(1)
+        # Handle open?id=... format
+        match = re.search(r'id=([a-zA-Z0-9_-]+)', url)
+        if match:
+            return match.group(1)
+        return None
+
+    def list_files_in_folder(self, folder_id):
+        if not self.service or not folder_id:
+            return []
+        
+        try:
+            # Query: folder_id in parents, not trashed, not a folder
+            query = f"'{folder_id}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'"
+            results = self.service.files().list(
+                q=query, 
+                spaces='drive', 
+                fields='files(id, name, mimeType, size)',
+                pageSize=500
+            ).execute()
+            return results.get('files', [])
+        except Exception as e:
+            print(f"Error listing files in folder {folder_id}: {e}")
+            return []
+
+    def get_file_content(self, file_id):
+        if not self.service or not file_id:
+            return None
+        
+        try:
+            return self.service.files().get_media(fileId=file_id).execute()
+        except Exception as e:
+            print(f"Error fetching file content {file_id}: {e}")
+            return None
