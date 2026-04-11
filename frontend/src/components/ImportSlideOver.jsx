@@ -16,7 +16,9 @@ const FIELD_LABELS = {
   net_content_unit: "Net Content Unit", color: "Color", raw_product_size: "Raw Product Size", 
   package_size: "Package Size", package_weight: "Package Wt (g)", raw_product_weight: "Raw Product Wt", 
   finished_product_weight: "Finished Product Wt",
-  bundle_type: "Bundle Type", pack_type: "Pack Type", tax_rule_code: "Tax Rule Code (HSN)", tax_percent: "Tax Percent"
+  bundle_type: "Bundle Type", pack_type: "Pack Type", tax_rule_code: "Tax Rule Code (HSN)", tax_percent: "Tax Percent",
+  product_type: "Product Type", remark: "Remark", metadata_json: "Metadata (JSON)",
+  live_platform_reference_id: "Live Platforms"
 };
 
 const SYSTEM_FIELDS = Object.entries(FIELD_LABELS).map(([k, v]) => ({ id: k, label: v }));
@@ -100,7 +102,7 @@ function CustomFieldSelect({ currentVal, onChange, options, disabledOptions }) {
 }
 
 export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onImportComplete }) {
-  const [file, setFile] = useState(null); // File object specifically cannot be persisted easily
+  const [file, setFile] = useState(null); 
   
   const [csvHeaders, setCsvHeaders] = useState(() => {
     try {
@@ -124,17 +126,16 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
       if (saved) return JSON.parse(saved);
     } catch(e) {}
     return {};
-  }); // { csvHeader: systemFieldId | "" }
+  }); 
 
   const [isImporting, setIsImporting] = useState(false);
-  const [importStats, setImportStats] = useState(null); // { success, skipped, total }
+  const [importProgress, setImportProgress] = useState(0);
+  const [importStats, setImportStats] = useState(null); // { success, skipped, failed, total }
   
   const fileRef = useRef(null);
 
-  // Sync to localStorage
   useEffect(() => {
     if (importStats) {
-       // If import finished successfully, clear the draft
        localStorage.removeItem('bloomerce_import_data');
        localStorage.removeItem('bloomerce_import_headers');
        localStorage.removeItem('bloomerce_import_mappings');
@@ -144,9 +145,8 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
     try {
       localStorage.setItem('bloomerce_import_headers', JSON.stringify(csvHeaders));
       localStorage.setItem('bloomerce_import_mappings', JSON.stringify(mappings));
-      // Only store data if it's reasonably sized to avoid QuotaExceededError
       const dataStr = JSON.stringify(csvData);
-      if (dataStr.length < 2000000) { // ~2MB limit for data
+      if (dataStr.length < 2000000) { 
         localStorage.setItem('bloomerce_import_data', dataStr);
       }
     } catch (e) {
@@ -154,7 +154,6 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
     }
   }, [csvHeaders, csvData, mappings, importStats]);
   
-  // -- 1. File Handling --
   const handleFileUpload = (e) => {
     const f = e.target.files[0];
     if (!f) return;
@@ -168,7 +167,6 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
         setCsvHeaders(headers);
         setCsvData(results.data);
         
-        // Auto-map based on exact or similar labels
         const initialMapping = {};
         headers.forEach(h => {
           const lowerH = h.toLowerCase().trim();
@@ -184,11 +182,9 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
     });
   };
 
-  // hasRestoredData: true when we have persisted data but no live File object
   const hasRestoredData = !file && csvHeaders.length > 0;
 
   const handleReset = () => {
-    // Also clear localStorage drafts on deliberate reset
     localStorage.removeItem('bloomerce_import_data');
     localStorage.removeItem('bloomerce_import_headers');
     localStorage.removeItem('bloomerce_import_mappings');
@@ -197,10 +193,10 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
     setCsvData([]);
     setMappings({});
     setImportStats(null);
+    setImportProgress(0);
     if(fileRef.current) fileRef.current.value = "";
   };
 
-  // -- 2. Execution --
   const activeMappingsCount = Object.values(mappings).filter(Boolean).length;
   const mappedSkuCode = Object.values(mappings).includes('sku_code');
 
@@ -218,92 +214,83 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
     if(!mappedSkuCode) return alert("You must map a column to 'SKU Code' because it is mandatory.");
     
     setIsImporting(true);
-    let success = 0; let skipped = 0;
-    
-    // We will build a local mutable cache of references to prevent duplicate auto-creations 
-    // during a large file import
-    const localRefs = {
-      BRAND: [...(refLists.BRAND || [])],
-      CATEGORY: [...(refLists.CATEGORY || [])],
-      SUB_CATEGORY: [...(refLists.SUB_CATEGORY || [])],
-      STATUS: [...(refLists.STATUS || [])],
-      BUNDLE_TYPE: [...(refLists.BUNDLE_TYPE || [])],
-      PACK_TYPE: [...(refLists.PACK_TYPE || [])]
-    };
-    
-    const resolveRef = async (type, labelValue, parentId = null) => {
-      if(!labelValue?.trim()) return null;
-      const cleanLabel = labelValue.trim();
-      const existing = localRefs[type].find(r => r.label.toLowerCase() === cleanLabel.toLowerCase());
-      if(existing) return existing.id;
-      
-      // Auto-create
-      try {
-         const newRef = await refApi.create({ 
-           reference_data_type: type, 
-           label: cleanLabel, 
-           is_active: true,
-           parent_reference_id: parentId
-         });
-         localRefs[type].push(newRef);
-         return newRef.id;
-      } catch(e) {
-         return null;
-      }
-    };
+    let success = 0; 
+    let skipped = 0;
+    let failed = 0;
+    const BATCH_SIZE = 500;
 
-       for(let i=0; i<csvData.length; i++) {
-         const mappedPayload = getMappedRow(csvData[i]);
-         
-         // Force SKU and Barcode to be identical as per user instruction
-         if (mappedPayload.sku_code) mappedPayload.barcode = mappedPayload.sku_code;
-         else if (mappedPayload.barcode) mappedPayload.sku_code = mappedPayload.barcode;
+    for (let i = 0; i < csvData.length; i += BATCH_SIZE) {
+      const chunk = csvData.slice(i, i + BATCH_SIZE);
+      const batchPayload = [];
 
-         if(!mappedPayload.sku_code || !mappedPayload.sku_code.trim()) {
+      chunk.forEach(rawRow => {
+        const mappedRow = getMappedRow(rawRow);
+        
+        if (mappedRow.sku_code) mappedRow.barcode = mappedRow.sku_code;
+        else if (mappedRow.barcode) mappedRow.sku_code = mappedRow.barcode;
+
+        if (!mappedRow.sku_code || !mappedRow.sku_code.trim()) {
           skipped++;
-          continue; // mandatory
-       }
+          return;
+        }
 
-       try {
-         // Resolve IDs
-         mappedPayload.brand_reference_id = await resolveRef('BRAND', mappedPayload.brand_reference_id);
-         mappedPayload.category_reference_id = await resolveRef('CATEGORY', mappedPayload.category_reference_id);
-         
-         mappedPayload.sub_category_reference_id = await resolveRef('SUB_CATEGORY', mappedPayload.sub_category_reference_id, mappedPayload.category_reference_id);
-         mappedPayload.status_reference_id = await resolveRef('STATUS', mappedPayload.status_reference_id);
-         mappedPayload.bundle_type = await resolveRef('BUNDLE_TYPE', mappedPayload.bundle_type);
-         mappedPayload.pack_type = await resolveRef('PACK_TYPE', mappedPayload.pack_type);
+        const backendRow = { ...mappedRow };
+        
+        if (backendRow.brand_reference_id) { backendRow.brand_label = backendRow.brand_reference_id; delete backendRow.brand_reference_id; }
+        if (backendRow.category_reference_id) { backendRow.category_label = backendRow.category_reference_id; delete backendRow.category_reference_id; }
+        if (backendRow.sub_category_reference_id) { backendRow.sub_category_label = backendRow.sub_category_reference_id; delete backendRow.sub_category_reference_id; }
+        if (backendRow.status_reference_id) { backendRow.status_label = backendRow.status_reference_id; delete backendRow.status_reference_id; }
+        if (backendRow.bundle_type) { backendRow.bundle_type_label = backendRow.bundle_type; delete backendRow.bundle_type; }
+        if (backendRow.pack_type) { backendRow.pack_type_label = backendRow.pack_type; delete backendRow.pack_type; }
 
-         // Clean numeric fields
-         ['mrp', 'purchase_cost', 'package_weight', 'raw_product_weight', 'finished_product_weight', 'net_content_value', 'tax_percent'].forEach(k => {
-           if(mappedPayload[k]) {
-              const num = Number(mappedPayload[k]);
-              mappedPayload[k] = isNaN(num) ? null : num;
-           }
-         });
+        const numericAndIdFields = [
+          'brand_reference_id', 'category_reference_id', 'sub_category_reference_id', 'status_reference_id',
+          'mrp', 'purchase_cost', 'package_weight', 'raw_product_weight', 'finished_product_weight', 
+          'net_content_value', 'tax_percent'
+        ];
+        
+        numericAndIdFields.forEach(k => {
+          if (backendRow[k] === "") backendRow[k] = null;
+        });
 
-         const existingSku = skus.find(s => s.sku_code === mappedPayload.sku_code);
-         if(existingSku) {
-            await skuApi.update(existingSku.id, mappedPayload);
-         } else {
-            // New SKU usually requires product_name as well by validation. 
-            // If they skipped it, backend might reject it based on models.
-            if(!mappedPayload.product_name) mappedPayload.product_name = mappedPayload.sku_code; // Fallback
-            await skuApi.create(mappedPayload);
-         }
-         success++;
-       } catch (err) {
-         console.error('Row import failed:', err);
-         skipped++;
-       }
+        ['mrp', 'purchase_cost', 'package_weight', 'raw_product_weight', 'finished_product_weight', 'net_content_value', 'tax_percent'].forEach(k => {
+          if(backendRow[k]) {
+             const num = Number(backendRow[k]);
+             backendRow[k] = isNaN(num) ? null : num;
+          }
+        });
+
+        if (!backendRow.product_name) backendRow.product_name = backendRow.sku_code;
+        batchPayload.push(backendRow);
+      });
+
+      if (batchPayload.length > 0) {
+        try {
+          const result = await skuApi.bulkImport({ skus: batchPayload });
+          success += (result.count || 0);
+          skipped += (batchPayload.length - (result.count || 0));
+        } catch (err) {
+          console.error(`Batch at offset ${i} failed:`, err);
+          failed += batchPayload.length;
+        }
+      }
+
+      const prog = Math.min(100, Math.round(((i + chunk.length) / csvData.length) * 100));
+      setImportProgress(prog);
+      setImportStats({ success, skipped, failed, total: csvData.length });
     }
 
-    setImportStats({ success, skipped, total: csvData.length });
+    // After all batches are attempted, cleanup if at least one record was processed
+    if (success > 0 || failed > 0) {
+      localStorage.removeItem('bloomerce_import_data');
+      localStorage.removeItem('bloomerce_import_headers');
+      localStorage.removeItem('bloomerce_import_mappings');
+    }
+    
     setIsImporting(false);
     if(onImportComplete) onImportComplete();
   };
 
-  // -- Preview Data --
   const previewRows = useMemo(() => {
     return csvData.slice(0,3).map(r => getMappedRow(r));
   }, [csvData, mappings]);
@@ -315,7 +302,6 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
       
       <div className="fixed inset-y-0 right-0 z-50 flex flex-col w-full md:max-w-2xl bg-[var(--color-background)] border-l border-[var(--color-border)] shadow-2xl animate-[slide-in-from-right_0.3s_cubic-bezier(0.4,0,0.2,1)]">
         
-        {/* Header */}
         <div className="flex flex-col border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-card)]">
           <div className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-3">
@@ -338,11 +324,20 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
               </div>
             )}
           </div>
+          
+          {isImporting && (
+            <div className="h-1 w-full bg-slate-100 overflow-hidden relative">
+              <div 
+                className="absolute inset-y-0 left-0 bg-[var(--color-primary)] transition-all duration-500 ease-out shadow-[0_0_8px_var(--color-primary)]"
+                style={{ width: `${importProgress}%` }}
+              />
+              <div className="absolute inset-y-0 left-0 w-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto w-full flex flex-col pt-2">
           
-          {/* STEP 1: UPLOAD — only show if no data at all */}
           {!file && !hasRestoredData && (
              <div className="p-6">
                 <h3 className="text-sm font-semibold mb-3">1. Upload CSV</h3>
@@ -362,7 +357,6 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
              </div>
           )}
 
-          {/* RESTORED SESSION BANNER */}
           {hasRestoredData && !importStats && (
             <div className="mx-6 mt-4 flex items-center gap-2.5 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
               <AlertCircle size={14} className="flex-shrink-0 text-amber-500" />
@@ -370,7 +364,6 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
             </div>
           )}
 
-          {/* IMPORT SUCCESS STATE */}
           {importStats && (
             <div className="p-10 flex flex-col items-center justify-center h-full text-center">
               <div className="w-16 h-16 rounded-full bg-green-100 flex flex-col items-center justify-center mb-4 text-green-600">
@@ -397,7 +390,6 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
             </div>
           )}
 
-          {/* STEP 2: MAPPING */}
           {(file || hasRestoredData) && !importStats && (
             <>
               <div className="px-5 sm:px-6 py-4">
@@ -451,7 +443,6 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
                 </div>
               </div>
 
-              {/* STEP 3: PREVIEW */}
               <div className="px-5 sm:px-6 py-6 pb-12 bg-[var(--color-muted)]/30 border-t border-[var(--color-border)] shrink-0">
                 <div className="flex items-center gap-2 mb-3">
                   <FileSpreadsheet size={15} className="text-[var(--color-primary)]" />

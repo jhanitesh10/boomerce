@@ -63,6 +63,7 @@ class SkuMasterBase(BaseModel):
     remark: Optional[str] = None
     bundle_type: Optional[Union[int, str]] = None
     product_component_group_code: Optional[str] = None
+    product_type: Optional[str] = None
     pack_type: Optional[Union[int, str]] = None
     tax_rule_code: Optional[str] = None
     tax_percent: Optional[float] = None
@@ -99,3 +100,14 @@ class ImageExportRequest(BaseModel):
     file_template: str = "{{sku_code}}_{{index}}"
     flatten_hierarchy: bool = False
     include_all_files: bool = True
+
+class SkuImportRow(SkuMasterBase):
+    brand_label: Optional[str] = None
+    category_label: Optional[str] = None
+    sub_category_label: Optional[str] = None
+    status_label: Optional[str] = None
+    bundle_type_label: Optional[str] = None
+    pack_type_label: Optional[str] = None
+
+class BulkImportRequest(BaseModel):
+    skus: List[SkuImportRow]

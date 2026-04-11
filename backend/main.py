@@ -404,6 +404,128 @@ def delete_sku(id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted securely"}
 
+@app.post("/api/skus/bulk-import")
+def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_db)):
+    from sqlalchemy import func
+    import logging
+    
+    # Set up dedicated import logger
+    logger = logging.getLogger("bulk_import")
+    if not logger.handlers:
+        fh = logging.FileHandler("import_errors.log")
+        fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(fh)
+        logger.setLevel(logging.INFO)
+
+    logger.info(f"Bulk Import: Starting for {len(data.skus)} rows")
+    
+    def safe_label(val):
+        if val is None: return ""
+        return str(val).strip()
+
+    try:
+        # 1. Collect all unique labels to resolve
+        unique_refs = {
+            "BRAND": set(), "CATEGORY": set(), "SUB_CATEGORY": set(),
+            "STATUS": set(), "BUNDLE_TYPE": set(), "PACK_TYPE": set()
+        }
+        
+        for s in data.skus:
+            if s.brand_label: unique_refs["BRAND"].add(safe_label(s.brand_label))
+            if s.category_label: unique_refs["CATEGORY"].add(safe_label(s.category_label))
+            if s.sub_category_label: unique_refs["SUB_CATEGORY"].add(safe_label(s.sub_category_label))
+            if s.status_label: unique_refs["STATUS"].add(safe_label(s.status_label))
+            if s.bundle_type_label: unique_refs["BUNDLE_TYPE"].add(safe_label(s.bundle_type_label))
+            if s.pack_type_label: unique_refs["PACK_TYPE"].add(safe_label(s.pack_type_label))
+
+        # 2. Batch resolve existing references
+        ref_map = {} # (type, label_lower) -> id
+        for ref_type, labels in unique_refs.items():
+            if not labels: continue
+            existing = db.query(models.ReferenceData).filter(
+                models.ReferenceData.reference_data_type == ref_type,
+                func.lower(models.ReferenceData.label).in_([l.lower() for l in labels]),
+                models.ReferenceData.deleted_at == None
+            ).all()
+            for r in existing:
+                ref_map[(ref_type, r.label.lower())] = r.id
+
+        # 3. Create missing references (Auto-create logic)
+        for ref_type, labels in unique_refs.items():
+            for l in labels:
+                if (ref_type, l.lower()) not in ref_map:
+                    slug = re.sub(r'[^a-z0-9]+', '_', l.lower()).strip('_')
+                    unique_suffix = uuid.uuid4().hex[:6]
+                    new_key = f"{ref_type.lower()}_{slug}_{unique_suffix}"
+                    
+                    new_ref = models.ReferenceData(
+                        reference_data_type=ref_type,
+                        label=l,
+                        key=new_key,
+                        is_active=True
+                    )
+                    db.add(new_ref)
+                    db.flush()
+                    ref_map[(ref_type, l.lower())] = new_ref.id
+
+        # 4. Batch resolve existing SKUs by sku_code
+        incoming_sku_codes = [s.sku_code for s in data.skus if s.sku_code]
+        existing_skus = db.query(models.SkuMaster).filter(
+            models.SkuMaster.sku_code.in_(incoming_sku_codes),
+            models.SkuMaster.deletedAt == None
+        ).all()
+        
+        # sku_id_map maps sku_code -> model instance
+        sku_id_map = {s.sku_code: s for s in existing_skus}
+
+        # 5. Process Import
+        processed_count = 0
+        for s_data in data.skus:
+            if not s_data.sku_code: continue
+            
+            # Prepare payload
+            payload = s_data.model_dump(exclude_unset=True)
+            
+            # Resolve IDs from labels
+            if s_data.brand_label: payload["brand_reference_id"] = ref_map.get(("BRAND", safe_label(s_data.brand_label).lower()))
+            if s_data.category_label: payload["category_reference_id"] = ref_map.get(("CATEGORY", safe_label(s_data.category_label).lower()))
+            if s_data.sub_category_label: payload["sub_category_reference_id"] = ref_map.get(("SUB_CATEGORY", safe_label(s_data.sub_category_label).lower()))
+            if s_data.status_label: payload["status_reference_id"] = ref_map.get(("STATUS", safe_label(s_data.status_label).lower()))
+            
+            if s_data.bundle_type_label: payload["bundle_type"] = ref_map.get(("BUNDLE_TYPE", safe_label(s_data.bundle_type_label).lower()))
+            if s_data.pack_type_label: payload["pack_type"] = ref_map.get(("PACK_TYPE", safe_label(s_data.pack_type_label).lower()))
+
+            # Remove local label fields
+            for k in ["brand_label", "category_label", "sub_category_label", "status_label", "bundle_type_label", "pack_type_label"]:
+                if k in payload: del payload[k]
+
+            # CRITICAL: Sanitize empty strings to None to prevent DB syntax errors (e.g. empty string to Integer)
+            for k, v in payload.items():
+                if v == "":
+                    payload[k] = None
+
+            # Upsert
+            existing_sku = sku_id_map.get(s_data.sku_code)
+            if existing_sku:
+                for k, v in payload.items():
+                    setattr(existing_sku, k, v)
+            else:
+                new_sku = models.SkuMaster(**payload)
+                db.add(new_sku)
+                # CRITICAL: Track it in our local map immediately in case the same SKU appears again in this batch
+                sku_id_map[s_data.sku_code] = new_sku
+            
+            processed_count += 1
+
+        db.commit()
+        logger.info(f"Bulk Import: Successfully committed {processed_count} SKUs")
+        return {"message": f"Successfully processed {processed_count} SKUs", "count": processed_count}
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Bulk Import CRITICAL ERROR: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Bulk Import Logic Error: {str(e)}")
+
 
 # ==========================================
 # JSON ARRAY HANDLER (Dynamic Tagging)
