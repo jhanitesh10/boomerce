@@ -5,7 +5,8 @@ import {
 } from 'lucide-react';
 
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import SkuMasterForm from './SkuMasterForm';
 import InlineCellEditor from './InlineCellEditor';
 import ExportCenterSlideOver from './ExportCenterSlideOver';
@@ -155,67 +156,89 @@ function NotePopover({ sku, onSave, onClose, onDraftChange }) {
   };
 
 
-  return (
-    <div
-      className="note-popover absolute bottom-full right-0 mb-2 w-64 bg-white rounded-2xl shadow-2xl border border-[var(--color-border)] p-4 z-[100] animate-[scale-in_0.15s_ease-out] text-left"
-      onClick={e => e.stopPropagation()}
-    >
-      <div className="flex items-center justify-between mb-3 border-b border-[var(--color-border)] pb-2 -mx-1">
-        <div className="flex items-center gap-1.5 px-1">
-           <div className="w-1.5 h-4 bg-[var(--color-primary)] rounded-full" />
-           <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-foreground)]">SKU Notes</span>
-        </div>
-        <div className="flex items-center gap-1">
-          {val && (
-            <button
-              onClick={() => setVal('')}
-              className="p-1.5 hover:bg-red-50 hover:text-red-500 rounded-md transition-all text-[var(--color-muted-foreground)] flex items-center gap-1 px-2"
-              title="Clear text"
-            >
-              <Trash2 size={13} />
-              <span className="text-[10px] font-bold uppercase tracking-tighter">Clear</span>
-            </button>
-          )}
-          <button onClick={onClose} className="p-1 px-2 hover:bg-slate-100 rounded-md transition-colors text-[var(--color-muted-foreground)]">
-            <X size={14} />
-          </button>
-        </div>
-      </div>
-
-
-      <textarea
-        ref={textareaRef}
-        value={val}
-        onChange={e => handleChange(e.target.value)}
-        placeholder="Add product remarks or comments here..."
-
-        className="w-full h-24 p-3 text-xs rounded-xl border border-[var(--color-border)] bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:border-[var(--color-primary)] transition-all resize-none text-[var(--color-foreground)] leading-relaxed"
-        onKeyDown={e => {
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSave();
-          if (e.key === 'Escape') onClose();
-        }}
+  return createPortal(
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+      {/* Backdrop for focus */}
+      <div 
+        className="absolute inset-0 bg-slate-900/10 backdrop-blur-[1px] animate-in fade-in duration-200" 
+        onClick={onClose}
       />
+      
+      <div
+        className="relative w-full max-w-[420px] bg-white rounded-3xl shadow-[0_30px_70px_rgba(0,0,0,0.25)] border border-[var(--color-border)] overflow-hidden animate-[scale-in_0.2s_ease-out] text-left"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="bg-slate-50 px-6 py-4 border-b border-[var(--color-border)] flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+             <div className="w-2.5 h-2.5 bg-[var(--color-primary)] rounded-full animate-pulse shadow-[0_0_8px_var(--color-primary)]" />
+             <span className="text-[12px] font-black uppercase tracking-[0.15em] text-slate-500">Edit SKU Note</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {val && (
+              <button
+                onClick={() => setVal('')}
+                className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-all flex items-center gap-1.5"
+                title="Clear content"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors group">
+              <X size={16} className="text-slate-400 group-hover:text-slate-600" />
+            </button>
+          </div>
+        </div>
 
-      <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
-        <span className="text-[10px] text-[var(--color-muted-foreground)] italic whitespace-nowrap opacity-70">
-          Ctrl + Enter to save
-        </span>
-        <div className="flex-1" />
-        <Button
-          size="sm"
-          onClick={handleSave}
-          disabled={saving}
-          className="h-8 px-4 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-white text-[11px] font-bold flex items-center justify-center gap-2 shadow-md shadow-[var(--color-primary)]/20 min-w-[120px]"
-        >
-          {saving ? <span className="w-3 h-3 border-2 border-white border-t-transparent animate-spin rounded-full" /> : <Send size={12} />}
-          <span>{sku.remark ? 'Update & Close' : 'Add Note & Close'}</span>
-        </Button>
+        <div className="p-6 bg-white">
+          <textarea
+            autoFocus
+            ref={textareaRef}
+            value={val}
+            onChange={e => handleChange(e.target.value)}
+            placeholder="Add internal product remarks or operational notes here..."
+            className="w-full h-40 p-5 text-[14px] rounded-2xl border border-[var(--color-border)] bg-slate-50/40 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[var(--color-primary)]/5 focus:border-[var(--color-primary)] transition-all resize-none text-[var(--color-foreground)] leading-relaxed placeholder:opacity-40"
+            onKeyDown={e => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSave();
+              if (e.key === 'Escape') onClose();
+            }}
+          />
+
+          <div className="flex items-center justify-between mt-6">
+             <button 
+                onClick={onClose}
+                className="text-[12px] font-bold text-slate-400 hover:text-slate-600 transition-colors px-2"
+              >
+                Discard Changes
+              </button>
+            
+            <div className="flex items-center gap-4">
+              <span className="text-[11px] text-slate-400 font-bold italic hidden sm:block opacity-60">
+                {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} + Enter
+              </span>
+              <Button
+                size="default"
+                onClick={handleSave}
+                disabled={saving}
+                className={cn(
+                  "h-11 px-6 rounded-2xl font-black text-[12px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-xl",
+                  val !== (sku.remark || '')
+                    ? "bg-[var(--color-primary)] text-white shadow-[var(--color-primary)]/30 scale-105"
+                    : "bg-slate-100 text-slate-400 shadow-none scale-100 cursor-default"
+                )}
+              >
+                {saving ? (
+                   <RefreshCcw size={14} className="animate-spin" />
+                ) : (
+                  <Send size={15} />
+                )}
+                <span>{sku.remark ? 'Update & Close' : 'Save Note'}</span>
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
-
-
-      {/* Tiny arrow pointing to the icon */}
-      <div className="absolute top-full right-5 w-3 h-3 bg-white border-r border-b border-[var(--color-border)] rotate-45 -translate-y-[6px]" />
-    </div>
+    </div>,
+    document.body
   );
 }
 
