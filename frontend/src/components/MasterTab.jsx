@@ -12,6 +12,7 @@ import InlineCellEditor from './InlineCellEditor';
 import ExportCenterSlideOver from './ExportCenterSlideOver';
 import ImportSlideOver from './ImportSlideOver';
 import TopFilterBar from './TopFilterBar';
+import CopyButton from './CopyButton';
 
 import { skuApi, refApi } from '../api';
 import { Button } from '@/components/ui/button';
@@ -267,7 +268,10 @@ function SkuCard({ sku, references, onEdit, onNote }) {
               <SquarePen size={16} />
             </button>
           </div>
-          <p className="text-[11px] font-mono text-[var(--color-muted-foreground)] mt-1">{sku.sku_code || sku.barcode || 'NO SKU CODE'}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-[11px] font-mono text-[var(--color-muted-foreground)]">{sku.sku_code || sku.barcode || 'NO SKU CODE'}</p>
+            <CopyButton value={sku.sku_code || sku.barcode} className="h-5 w-5 opacity-40 hover:opacity-100" iconSize={10} />
+          </div>
           <div className="flex items-center gap-2 mt-2">
             <span className="text-[11px] font-bold text-[var(--color-primary)]/80 uppercase tracking-tighter">{brand}</span>
             <div className="w-1 h-1 rounded-full bg-[var(--color-border)]" />
@@ -575,16 +579,37 @@ export default function MasterTab({ isMobile }) {
           {val ? <img src={val} alt="sku" className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center bg-[var(--color-muted)]"><ImageIcon size={16} className="text-[var(--color-muted-foreground)]"/></div>}
         </div>
       );
-      case 'barcode': return (
-        <span className="font-mono text-xs font-semibold text-[var(--color-foreground)] truncate">
-          {sku.sku_code || sku.barcode || ''}
-        </span>
-      );
+      case 'barcode': {
+        const barcodeVal = sku.sku_code || sku.barcode || '';
+        return (
+          <div className="flex items-center justify-between gap-1 group/item">
+            <span className="font-mono text-xs font-semibold text-[var(--color-foreground)] truncate">
+              {barcodeVal}
+            </span>
+            {barcodeVal && (
+              <CopyButton 
+                value={barcodeVal} 
+                className="opacity-0 group-hover/item:opacity-100" 
+                title="Copy SKU/Barcode" 
+              />
+            )}
+          </div>
+        );
+      }
       case 'product_name': return (
-        <div className="flex flex-col gap-1 min-w-0">
-          <span className="font-medium text-[var(--color-foreground)]/85 text-[13.5px] leading-snug whitespace-normal break-words line-clamp-2" title={val}>
-            {val || <span className="text-[var(--color-muted-foreground)] font-normal italic text-[11px]">Unnamed Product</span>}
-          </span>
+        <div className="flex items-center justify-between gap-2 group/item min-w-0">
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <span className="font-medium text-[var(--color-foreground)]/85 text-[13.5px] leading-snug whitespace-normal break-words line-clamp-2" title={val}>
+              {val || <span className="text-[var(--color-muted-foreground)] font-normal italic text-[11px]">Unnamed Product</span>}
+            </span>
+          </div>
+          {val && (
+            <CopyButton 
+              value={val} 
+              className="opacity-0 group-hover/item:opacity-100 flex-shrink-0" 
+              title="Copy Product Name" 
+            />
+          )}
         </div>
       );
       case 'status_reference_id': {
@@ -629,16 +654,23 @@ export default function MasterTab({ isMobile }) {
       case 'net_content':  return <span className="text-sm text-[var(--color-muted-foreground)]">{sku.net_content_value ? `${sku.net_content_value} ${sku.net_content_unit||''}` : '—'}</span>;
       case 'tax_percent':  return <span className="text-sm text-[var(--color-muted-foreground)]">{val!=null ? `${val}%` : '—'}</span>;
       case 'catalog_url':  return val ? (
-        <a
-          href={val}
-          target="_blank"
-          rel="noreferrer"
-          onClick={e=>e.stopPropagation()}
-          className="flex items-center justify-center p-1.5 rounded-lg hover:bg-[var(--color-primary)]/10 text-[var(--color-primary)] transition-all mx-auto shadow-sm border border-[var(--color-primary)]/20"
-          title="Open in Google Drive"
-        >
-          <ExternalLink size={14} />
-        </a>
+        <div className="flex items-center justify-center gap-1 group/item">
+          <a
+            href={val}
+            target="_blank"
+            rel="noreferrer"
+            onClick={e=>e.stopPropagation()}
+            className="flex items-center justify-center p-1.5 rounded-lg hover:bg-[var(--color-primary)]/10 text-[var(--color-primary)] transition-all shadow-sm border border-[var(--color-primary)]/20"
+            title="Open in Google Drive"
+          >
+            <ExternalLink size={14} />
+          </a>
+          <CopyButton 
+            value={val} 
+            className="opacity-0 group-hover/item:opacity-100" 
+            title="Copy Drive Link" 
+          />
+        </div>
       ) : <span className="text-xs text-[var(--color-muted-foreground)]">—</span>;
       case 'createdAt': {
         if (!val) return <span className="text-sm text-[var(--color-muted-foreground)]">—</span>;
@@ -653,18 +685,26 @@ export default function MasterTab({ isMobile }) {
 
       case 'remark': return (
         <div className="relative flex items-center justify-center">
-          <button
-            onClick={(e) => { e.stopPropagation(); setActiveNoteSkuId(prev => prev === sku.id ? null : sku.id); }}
-            className={cn(
-              "note-trigger p-2 rounded-lg transition-all mx-auto relative group-hover:scale-110",
-
-              val ? "text-[var(--color-primary)] bg-[var(--color-primary)]/10" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+          <div className="group/item flex items-center justify-center gap-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); setActiveNoteSkuId(prev => prev === sku.id ? null : sku.id); }}
+              className={cn(
+                "note-trigger p-2 rounded-lg transition-all relative group-hover/item:scale-110",
+                val ? "text-[var(--color-primary)] bg-[var(--color-primary)]/10" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+              )}
+              title={val || "Add Note"}
+            >
+              <StickyNote size={15} fill={val ? "currentColor" : "none"} fillOpacity={0.2} />
+              {val && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-[var(--color-primary)] rounded-full border border-white" />}
+            </button>
+            {val && (
+              <CopyButton 
+                value={val} 
+                className="opacity-0 group-hover/item:opacity-100" 
+                title="Copy Remark"
+              />
             )}
-            title={val || "Add Note"}
-          >
-            <StickyNote size={15} fill={val ? "currentColor" : "none"} fillOpacity={0.2} />
-            {val && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-[var(--color-primary)] rounded-full border border-white" />}
-          </button>
+          </div>
 
           {activeNoteSkuId === sku.id && (
             <NotePopover
@@ -681,13 +721,28 @@ export default function MasterTab({ isMobile }) {
       default:
 
         if (val==null||val==='') return <span className="text-sm text-[var(--color-muted-foreground)]">—</span>;
-        if (col.isNum)    return <span className="font-semibold text-sm tabular-nums">₹{Number(val).toLocaleString('en-IN')}</span>;
-        if (col.isMono)   return <span className="font-mono text-xs text-[var(--color-muted-foreground)]">{val}</span>;
+        if (col.isNum)    return (
+          <div className="group/item flex items-center justify-end gap-1.5">
+            <span className="font-semibold text-sm tabular-nums">₹{Number(val).toLocaleString('en-IN')}</span>
+            <CopyButton value={val} className="opacity-0 group-hover/item:opacity-100 h-6 w-6" iconSize={12} title={`Copy ${col.labelValue || col.label}`} />
+          </div>
+        );
+        if (col.isMono)   return (
+          <div className="group/item flex items-center justify-between gap-1.5">
+            <span className="font-mono text-xs text-[var(--color-muted-foreground)] truncate">{val}</span>
+            <CopyButton value={val} className="opacity-0 group-hover/item:opacity-100 h-6 w-6" iconSize={12} title={`Copy ${col.label}`} />
+          </div>
+        );
         if (col.isContent) return (
-          <div className="group/large-text relative max-w-full">
-            <span className="text-[10.5px] text-[var(--color-muted-foreground)]/60 line-clamp-3 leading-relaxed cursor-help hover:text-[var(--color-foreground)] transition-colors" title={val}>
+          <div className="group/item relative max-w-full flex items-start justify-between gap-1">
+            <span className="text-[10.5px] text-[var(--color-muted-foreground)]/60 line-clamp-3 leading-relaxed cursor-help hover:text-[var(--color-foreground)] transition-colors flex-1" title={val}>
               {val}
             </span>
+            <CopyButton 
+              value={val} 
+              className="opacity-0 group-hover/item:opacity-100 flex-shrink-0" 
+              title={`Copy ${col.label}`} 
+            />
           </div>
         );
         return <span className="text-sm text-[var(--color-muted-foreground)]">{val}</span>;
