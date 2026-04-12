@@ -106,8 +106,8 @@ function App() {
         className={cn(
           "flex flex-col flex-shrink-0 bg-[var(--color-sidebar)] border-r border-[var(--color-border)] transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-xl shadow-[var(--color-shadow)]",
           isMobile 
-            ? cn("fixed inset-y-0 left-0 z-[80] w-[280px] transform shadow-2xl", isMobileMenuOpen ? "translate-x-0" : "-translate-x-full")
-            : cn("sticky top-0 h-screen", sidebarWidth)
+            ? cn("fixed inset-y-0 left-0 z-[80] w-[280px] transform shadow-2xl ", isMobileMenuOpen ? "translate-x-0" : "-translate-x-full")
+            : cn("fixed inset-y-0 left-0 h-full", sidebarWidth)
         )}
       >
         {/* Brand Section */}
@@ -214,7 +214,7 @@ function App() {
       {/* ── Main ── */}
       <main className={cn(
         "flex-1 min-w-0 flex flex-col bg-[var(--color-background)] overflow-hidden",
-        isMobile && "pt-16"
+        isMobile ? "pt-16" : cn("transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]", (isSidebarOpen || isHovered) ? "ml-[240px]" : "ml-20")
       )}>
         <div className={cn(
           "flex-1 overflow-y-auto custom-scrollbar",

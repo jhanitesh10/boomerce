@@ -119,7 +119,7 @@ const FILTER_TABS = [
   { key: 'draft',          icon: FileEdit,   label: c => `Draft (${c['draft'] || 0})` },
   { key: 'in development', icon: Rocket,     label: c => `New Launches (${c['in development'] || c['development'] || 0})` },
 ];
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 80, 100];
 
 // ── Note Popover Component (Portaled & Spacious) ─────────────────────────────
 function NotePopover({ sku, onSave, onClose, onDraftChange }) {
@@ -311,7 +311,7 @@ export default function MasterTab({ isMobile }) {
   const [sortCol,        setSortCol]        = useState('product_name');
   const [sortDir,        setSortDir]        = useState('asc');
   const [page,           setPage]           = useState(1);
-  const [pageSize,       setPageSize]       = useState(25);
+  const [pageSize,       setPageSize]       = useState(80);
   const [isFormOpen,     setIsFormOpen]     = useState(false);
   const [isExportCenterOpen, setIsExportCenterOpen] = useState(false);
   const [isImportOpen,   setIsImportOpen]   = useState(false);
