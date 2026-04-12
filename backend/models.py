@@ -80,3 +80,49 @@ class SkuMaster(Base):
     updated_by_id = Column(Integer, nullable=True)
     deletedAt = Column(DateTime, nullable=True)
     deleted_by_id = Column(Integer, nullable=True)
+
+class SalesOrder(Base):
+    __tablename__ = "sales_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(String(100), index=True, nullable=True)
+    platform_reference_id = Column(Integer, ForeignKey('reference_data.id'), nullable=True)
+    sku_master_id = Column(Integer, ForeignKey('sku_master.id'), nullable=True)
+    order_type = Column(String(50), default='ORDER', index=True) # ORDER, RETURN
+    
+    external_order_id = Column(String(255), index=True, nullable=True)
+    external_sku = Column(String(255), index=True, nullable=True)
+    
+    order_date = Column(DateTime, index=True, nullable=True)
+    ship_date = Column(DateTime, nullable=True)
+    delivery_date = Column(DateTime, nullable=True)
+    return_date = Column(DateTime, nullable=True)
+    
+    quantity = Column(Integer, nullable=True)
+    unit_selling_price = Column(Float, nullable=True)
+    total_amount = Column(Float, nullable=True)
+    tax_amount = Column(Float, nullable=True)
+    platform_fee = Column(Float, nullable=True)
+    
+    order_status = Column(String(100), index=True, nullable=True)
+    payment_method = Column(String(100), nullable=True)
+    tracking_id = Column(String(255), nullable=True)
+    courier_name = Column(String(255), nullable=True)
+    
+    customer_city = Column(String(255), nullable=True)
+    customer_state = Column(String(255), nullable=True)
+    customer_pincode = Column(String(20), nullable=True)
+    
+    metadata_json = Column(JSON, nullable=True)
+    remark = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_by_id = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    updated_by_id = Column(Integer, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by_id = Column(Integer, nullable=True)
+
+    # Relationships
+    platform = relationship("ReferenceData", foreign_keys=[platform_reference_id])
+    sku_master = relationship("SkuMaster", foreign_keys=[sku_master_id])

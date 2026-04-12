@@ -111,3 +111,52 @@ class SkuImportRow(SkuMasterBase):
 
 class BulkImportRequest(BaseModel):
     skus: List[SkuImportRow]
+
+# --- Sales Order Schemas ---
+class SalesOrderBase(BaseModel):
+    tenant_id: Optional[str] = None
+    platform_reference_id: Optional[int] = None
+    sku_master_id: Optional[int] = None
+    order_type: Optional[str] = 'ORDER'
+    
+    external_order_id: Optional[str] = None
+    external_sku: Optional[str] = None
+    
+    order_date: Optional[datetime] = None
+    ship_date: Optional[datetime] = None
+    delivery_date: Optional[datetime] = None
+    return_date: Optional[datetime] = None
+    
+    quantity: Optional[int] = None
+    unit_selling_price: Optional[float] = None
+    total_amount: Optional[float] = None
+    tax_amount: Optional[float] = None
+    platform_fee: Optional[float] = None
+    
+    order_status: Optional[str] = None
+    payment_method: Optional[str] = None
+    tracking_id: Optional[str] = None
+    courier_name: Optional[str] = None
+    
+    customer_city: Optional[str] = None
+    customer_state: Optional[str] = None
+    customer_pincode: Optional[str] = None
+    
+    metadata_json: Optional[Union[Dict[str, Any], List[Any]]] = None
+    remark: Optional[str] = None
+    
+    created_by_id: Optional[int] = None
+    updated_by_id: Optional[int] = None
+
+class SalesOrderCreate(SalesOrderBase):
+    pass
+
+class SalesOrder(SalesOrderBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: Optional[datetime] = None
+    deleted_by_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
