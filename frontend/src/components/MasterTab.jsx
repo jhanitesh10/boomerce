@@ -29,11 +29,11 @@ function StatusBadge({ label }) {
 
 // ── Base columns (always visible, rowSpan=2, pinned left) ─────────────────────
 const BASE_COLS = [
-  { id: 'actions',            label: '',         width: 52,  align: 'center', noInline: true, sticky: true, stickyLeft: 0 },
-  { id: 'primary_image_url',  label: 'Image',    width: 76,  align: 'center', noInline: true, sticky: true, stickyLeft: 52 },
-  { id: 'product_name',       label: 'Product',  width: 260, sortable: true,  sticky: true, stickyLeft: 128 },
-  { id: 'barcode',            label: 'SKU / EAN / Barcode ID',  width: 160, isMono: true,    sticky: true, stickyLeft: 388 },
-  { id: 'brand_reference_id', label: 'Brand',    width: 140, sortable: true,  sticky: true, stickyLeft: 548 },
+  { id: 'actions',            label: '',         width: 70,  align: 'center', noInline: true, sticky: true, stickyLeft: 0 },
+  { id: 'primary_image_url',  label: 'Image',    width: 76,  align: 'center', noInline: true, sticky: true, stickyLeft: 70 },
+  { id: 'product_name',       label: 'Product',  width: 260, sortable: true,  sticky: true, stickyLeft: 146 },
+  { id: 'barcode',            label: 'SKU / EAN / Barcode ID',  width: 160, isMono: true,    sticky: true, stickyLeft: 406 },
+  { id: 'brand_reference_id', label: 'Brand',    width: 140, sortable: true,  sticky: true, stickyLeft: 566 },
 ];
 
 const REMARKS_COL = { id: 'remark', label: 'Notes', width: 62, align: 'center', sticky: true, isRight: true };
@@ -44,9 +44,9 @@ const GROUPS = [
   {
     id: 'classification', label: 'Classification', color: 'violet',
     cols: [
-      { id: 'status_reference_id',       label: 'Status',         width: 115 },
-      { id: 'category_reference_id',     label: 'Category',       width: 140 },
-      { id: 'sub_category_reference_id', label: 'Sub-Category',   width: 150 },
+      { id: 'status_reference_id',       label: 'Status',         width: 140 },
+      { id: 'category_reference_id',     label: 'Category',       width: 180 },
+      { id: 'sub_category_reference_id', label: 'Sub-Category',   width: 200 },
     ],
   },
   {
@@ -345,12 +345,6 @@ function SkuCard({ sku, references, onEdit, onNote }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
            {statusLbl && <StatusBadge label={statusLbl} />}
-           {sku.remark && (
-             <div className="flex items-center gap-1 text-[var(--color-primary)] text-[10px] font-bold bg-[var(--color-primary)]/10 px-2 py-0.5 rounded-full">
-               <StickyNote size={10} fill="currentColor" fillOpacity={0.2} />
-               <span>Note</span>
-             </div>
-           )}
         </div>
         <button
           onClick={onNote}
@@ -479,9 +473,12 @@ export default function MasterTab({ isMobile }) {
 
   const saveInlineEdit = useCallback(async (skuId, colId, value) => {
     if (savingRef.current) return; 
+    savingRef.current = true;
+    const parsed = value === '' ? null : value;
     
     // Only clear if this specific cell is still the active editor
     setInlineEdit(prev => (prev?.skuId === skuId && prev?.colId === colId) ? null : prev);
+    
     if (parsed !== undefined) {
       setSkus(prev => prev.map(s => s.id === skuId ? { ...s, [colId]: parsed } : s));
       try { await skuApi.update(skuId, { [colId]: parsed }); }
@@ -774,15 +771,6 @@ export default function MasterTab({ isMobile }) {
               />
             )}
           </div>
-
-          {activeNoteSkuId === sku.id && (
-            <NotePopover
-              sku={sku}
-              onSave={(v) => saveInlineEdit(sku.id, 'remark', v).then(() => setActiveNoteSkuId(null))}
-              onClose={handleNoteClose}
-              onDraftChange={(v) => { noteDraftRef.current = v; }}
-            />
-          )}
 
         </div>
       );
@@ -1182,7 +1170,7 @@ export default function MasterTab({ isMobile }) {
                             )}
                             style={{
                               width: col.width, minWidth: col.width,
-                              maxWidth: isActive ? undefined : col.width,
+                              maxWidth: col.width,
                               left: col.sticky && !col.isRight ? col.stickyLeft : undefined,
                               right: col.sticky && col.isRight ? 0 : undefined,
                               textAlign: col.align||'left',
@@ -1260,6 +1248,20 @@ export default function MasterTab({ isMobile }) {
         />
       )}
       {isImportOpen && <ImportSlideOver skus={skus} refLists={refLists} onClose={()=>setIsImportOpen(false)} onImportComplete={()=>{setIsImportOpen(false);loadAll();}} />}
+      
+      {/* Global Note Editor */}
+      {activeNoteSkuId && (() => {
+         const sku = skus.find(s => s.id === activeNoteSkuId);
+         if (!sku) return null;
+         return (
+           <NotePopover
+             sku={sku}
+             onSave={(v) => saveInlineEdit(sku.id, 'remark', v).then(() => setActiveNoteSkuId(null))}
+             onClose={handleNoteClose}
+             onDraftChange={(v) => { noteDraftRef.current = v; }}
+           />
+         );
+      })()}
     </div>
   );
 }
