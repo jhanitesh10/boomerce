@@ -29,11 +29,11 @@ function StatusBadge({ label }) {
 
 // ── Base columns (always visible, rowSpan=2, pinned left) ─────────────────────
 const BASE_COLS = [
-  { id: 'actions',            label: '',         width: 70,  align: 'center', noInline: true, sticky: true, stickyLeft: 0 },
-  { id: 'primary_image_url',  label: 'Image',    width: 76,  align: 'center', noInline: true, sticky: true, stickyLeft: 70 },
-  { id: 'product_name',       label: 'Product',  width: 260, sortable: true,  sticky: true, stickyLeft: 146 },
-  { id: 'barcode',            label: 'SKU / EAN / Barcode ID',  width: 160, isMono: true,    sticky: true, stickyLeft: 406 },
-  { id: 'brand_reference_id', label: 'Brand',    width: 140, sortable: true,  sticky: true, stickyLeft: 566 },
+  { id: 'actions',            label: '',         width: 82,  align: 'center', noInline: true, sticky: true, stickyLeft: 0 },
+  { id: 'primary_image_url',  label: 'Image',    width: 76,  align: 'center', noInline: true, sticky: true, stickyLeft: 82 },
+  { id: 'product_name',       label: 'Product',  width: 260, sortable: true,  sticky: true, stickyLeft: 158 },
+  { id: 'barcode',            label: 'SKU / EAN / Barcode ID',  width: 160, isMono: true,    sticky: true, stickyLeft: 418 },
+  { id: 'brand_reference_id', label: 'Brand',    width: 140, sortable: true,  sticky: true, stickyLeft: 578 },
 ];
 
 const REMARKS_COL = { id: 'remark', label: 'Notes', width: 62, align: 'center', sticky: true, isRight: true };
@@ -223,7 +223,7 @@ function NotePopover({ sku, onSave, onClose, onDraftChange }) {
       />
       
       <div
-        className="relative w-full max-w-[520px] bg-[var(--color-card)] rounded-3xl shadow-[0_30px_90px_var(--color-shadow)] border border-[var(--color-border)] overflow-hidden animate-[scale-in_0.2s_ease-out] text-left"
+        className="note-popover relative w-full max-w-[520px] bg-[var(--color-card)] rounded-3xl shadow-[0_30px_90px_var(--color-shadow)] border border-[var(--color-border)] overflow-hidden animate-[scale-in_0.2s_ease-out] text-left"
         onClick={e => e.stopPropagation()}
       >
         <div className="bg-[var(--color-muted)]/50 px-6 py-4 border-b border-[var(--color-border)] flex items-center justify-between">
@@ -348,7 +348,7 @@ function SkuCard({ sku, references, onEdit, onNote }) {
         </div>
         <button
           onClick={onNote}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[11px] font-bold text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] transition-colors active:scale-95"
+          className="note-trigger flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[11px] font-bold text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] transition-colors active:scale-95"
         >
           <StickyNote size={13} />
           <span>{sku.remark ? 'View Note' : 'Add Note'}</span>
@@ -750,28 +750,18 @@ export default function MasterTab({ isMobile }) {
       }
 
       case 'remark': return (
-        <div className="relative flex items-center justify-center">
-          <div className="group/item flex items-center justify-center gap-2">
-            <button
-              onClick={(e) => { e.stopPropagation(); setActiveNoteSkuId(prev => prev === sku.id ? null : sku.id); }}
-              className={cn(
-                "note-trigger p-2 rounded-lg transition-all relative group-hover/item:scale-110",
-                val ? "text-[var(--color-primary)] bg-[var(--color-primary)]/10" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
-              )}
-              title={val || "Add Note"}
-            >
-              <StickyNote size={15} fill={val ? "currentColor" : "none"} fillOpacity={0.2} />
-              {val && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-[var(--color-primary)] rounded-full border border-white" />}
-            </button>
-            {val && (
-              <CopyButton 
-                value={val} 
-                className="opacity-100 md:opacity-0 group-hover/item:opacity-100" 
-                title="Copy Remark"
-              />
+        <div className="flex items-center justify-center w-full h-full">
+          <button
+            onClick={(e) => { e.stopPropagation(); setActiveNoteSkuId(prev => prev === sku.id ? null : sku.id); }}
+            className={cn(
+              "note-trigger p-2 rounded-lg transition-all relative",
+              val ? "text-[var(--color-primary)] bg-[var(--color-primary)]/10" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
             )}
-          </div>
-
+            title={val || "Add Note"}
+          >
+            <StickyNote size={15} fill={val ? "currentColor" : "none"} fillOpacity={0.2} />
+            {val && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-[var(--color-primary)] rounded-full border border-white" />}
+          </button>
         </div>
       );
 
@@ -1155,7 +1145,8 @@ export default function MasterTab({ isMobile }) {
                             onDoubleClick={(isActive || !canInline || isRefField) ? undefined : () => { startInlineEdit(sku, col.id); setSelectedCell(null); }}
                             className={cn(
                               "transition-all relative group/cell outline-none",
-                              "border-b border-[var(--color-border)] px-4 py-2.5 cursor-default align-middle",
+                              "border-b border-[var(--color-border)] py-2.5 cursor-default align-middle",
+                              (col.id === 'actions' || col.id === 'primary_image_url') ? "px-2" : "px-4",
                               isActive && "z-20",
                               isSelected && "outline outline-2 outline-[var(--color-primary)] outline-offset-[-2px] z-30 after:absolute after:inset-0 after:bg-[var(--color-primary)]/10 after:pointer-events-none shadow-sm",
                                col.sticky && "sticky z-40 bg-[var(--color-card)]",
