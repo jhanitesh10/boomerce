@@ -479,47 +479,69 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
         sku_id_map = {s.sku_code: s for s in existing_skus}
 
         # 5. Process Import
-        processed_count = 0
+        success_count = 0
+        failed_count = 0
+        errors = []
+
         for s_data in data.skus:
-            if not s_data.sku_code: continue
+            if not s_data.sku_code:
+                failed_count += 1
+                errors.append({"sku_code": "UNKNOWN", "error": "Missing SKU Code"})
+                continue
             
-            # Prepare payload
-            payload = s_data.model_dump(exclude_unset=True)
-            
-            # Resolve IDs from labels
-            if s_data.brand_label: payload["brand_reference_id"] = ref_map.get(("BRAND", safe_label(s_data.brand_label).lower()))
-            if s_data.category_label: payload["category_reference_id"] = ref_map.get(("CATEGORY", safe_label(s_data.category_label).lower()))
-            if s_data.sub_category_label: payload["sub_category_reference_id"] = ref_map.get(("SUB_CATEGORY", safe_label(s_data.sub_category_label).lower()))
-            if s_data.status_label: payload["status_reference_id"] = ref_map.get(("STATUS", safe_label(s_data.status_label).lower()))
-            
-            if s_data.bundle_type_label: payload["bundle_type"] = ref_map.get(("BUNDLE_TYPE", safe_label(s_data.bundle_type_label).lower()))
-            if s_data.pack_type_label: payload["pack_type"] = ref_map.get(("PACK_TYPE", safe_label(s_data.pack_type_label).lower()))
+            try:
+                # Use a nested transaction (savepoint) for each SKU
+                with db.begin_nested():
+                    # Prepare payload
+                    payload = s_data.model_dump(exclude_unset=True)
+                    
+                    # Resolve IDs from labels
+                    if s_data.brand_label: payload["brand_reference_id"] = ref_map.get(("BRAND", safe_label(s_data.brand_label).lower()))
+                    if s_data.category_label: payload["category_reference_id"] = ref_map.get(("CATEGORY", safe_label(s_data.category_label).lower()))
+                    if s_data.sub_category_label: payload["sub_category_reference_id"] = ref_map.get(("SUB_CATEGORY", safe_label(s_data.sub_category_label).lower()))
+                    if s_data.status_label: payload["status_reference_id"] = ref_map.get(("STATUS", safe_label(s_data.status_label).lower()))
+                    
+                    if s_data.bundle_type_label: payload["bundle_type"] = ref_map.get(("BUNDLE_TYPE", safe_label(s_data.bundle_type_label).lower()))
+                    if s_data.pack_type_label: payload["pack_type"] = ref_map.get(("PACK_TYPE", safe_label(s_data.pack_type_label).lower()))
 
-            # Remove local label fields
-            for k in ["brand_label", "category_label", "sub_category_label", "status_label", "bundle_type_label", "pack_type_label"]:
-                if k in payload: del payload[k]
+                    # Remove local label fields
+                    for k in ["brand_label", "category_label", "sub_category_label", "status_label", "bundle_type_label", "pack_type_label"]:
+                        if k in payload: del payload[k]
 
-            # CRITICAL: Sanitize empty strings to None to prevent DB syntax errors (e.g. empty string to Integer)
-            for k, v in payload.items():
-                if v == "":
-                    payload[k] = None
+                    # CRITICAL: Sanitize empty strings to None to prevent DB syntax errors
+                    for k, v in payload.items():
+                        if v == "":
+                            payload[k] = None
 
-            # Upsert
-            existing_sku = sku_id_map.get(s_data.sku_code)
-            if existing_sku:
-                for k, v in payload.items():
-                    setattr(existing_sku, k, v)
-            else:
-                new_sku = models.SkuMaster(**payload)
-                db.add(new_sku)
-                # CRITICAL: Track it in our local map immediately in case the same SKU appears again in this batch
-                sku_id_map[s_data.sku_code] = new_sku
-            
-            processed_count += 1
+                    # Upsert
+                    existing_sku = sku_id_map.get(s_data.sku_code)
+                    if existing_sku:
+                        for k, v in payload.items():
+                            setattr(existing_sku, k, v)
+                    else:
+                        new_sku = models.SkuMaster(**payload)
+                        db.add(new_sku)
+                        sku_id_map[s_data.sku_code] = new_sku
+                    
+                    db.flush() # Ensure it's valid for this nested transaction
+                
+                success_count += 1
+            except Exception as e:
+                # Rollback of the nested transaction happens automatically by 'with db.begin_nested()'
+                failed_count += 1
+                err_msg = str(e)
+                logger.warning(f"SKU {s_data.sku_code} failed: {err_msg}")
+                errors.append({"sku_code": s_data.sku_code, "error": err_msg})
 
         db.commit()
-        logger.info(f"Bulk Import: Successfully committed {processed_count} SKUs")
-        return {"message": f"Successfully processed {processed_count} SKUs", "count": processed_count}
+        logger.info(f"Bulk Import Complete: {success_count} success, {failed_count} failures")
+        return {
+            "message": f"Processed {len(data.skus)} items",
+            "count": success_count, # keeping 'count' for backward compatibility if any
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "errors": errors
+        }
 
     except Exception as e:
         db.rollback()

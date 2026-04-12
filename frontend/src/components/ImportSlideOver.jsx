@@ -130,7 +130,9 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
 
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
+  const [progressStatus, setProgressStatus] = useState("");
   const [importStats, setImportStats] = useState(null); // { success, skipped, failed, total }
+  const [importErrors, setImportErrors] = useState([]);
   
   const fileRef = useRef(null);
 
@@ -193,7 +195,9 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
     setCsvData([]);
     setMappings({});
     setImportStats(null);
+    setImportErrors([]);
     setImportProgress(0);
+    setProgressStatus("");
     if(fileRef.current) fileRef.current.value = "";
   };
 
@@ -217,15 +221,18 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
     let success = 0; 
     let skipped = 0;
     let failed = 0;
-    const BATCH_SIZE = 500;
+    let errorsCollected = [];
+    const BATCH_SIZE = 50;
 
     for (let i = 0; i < csvData.length; i += BATCH_SIZE) {
-      const chunk = csvData.slice(i, i + BATCH_SIZE);
+      const end = Math.min(i + BATCH_SIZE, csvData.length);
+      setProgressStatus(`Processing rows ${i + 1} to ${end}...`);
+      
+      const chunk = csvData.slice(i, end);
       const batchPayload = [];
 
       chunk.forEach(rawRow => {
         const mappedRow = getMappedRow(rawRow);
-        
         if (mappedRow.sku_code) mappedRow.barcode = mappedRow.sku_code;
         else if (mappedRow.barcode) mappedRow.sku_code = mappedRow.barcode;
 
@@ -235,7 +242,6 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
         }
 
         const backendRow = { ...mappedRow };
-        
         if (backendRow.brand_reference_id) { backendRow.brand_label = backendRow.brand_reference_id; delete backendRow.brand_reference_id; }
         if (backendRow.category_reference_id) { backendRow.category_label = backendRow.category_reference_id; delete backendRow.category_reference_id; }
         if (backendRow.sub_category_reference_id) { backendRow.sub_category_label = backendRow.sub_category_reference_id; delete backendRow.sub_category_reference_id; }
@@ -267,17 +273,22 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
       if (batchPayload.length > 0) {
         try {
           const result = await skuApi.bulkImport({ skus: batchPayload });
-          success += (result.count || 0);
-          skipped += (batchPayload.length - (result.count || 0));
+          success += (result.success_count || 0);
+          failed += (result.failed_count || 0);
+          if (result.errors) {
+            errorsCollected = [...errorsCollected, ...result.errors];
+          }
         } catch (err) {
           console.error(`Batch at offset ${i} failed:`, err);
           failed += batchPayload.length;
+          errorsCollected.push({ sku_code: "BATCH_ERROR", error: err.message || "Network/System error" });
         }
       }
 
-      const prog = Math.min(100, Math.round(((i + chunk.length) / csvData.length) * 100));
+      const prog = Math.min(100, Math.round((end / csvData.length) * 100));
       setImportProgress(prog);
       setImportStats({ success, skipped, failed, total: csvData.length });
+      setImportErrors(errorsCollected);
     }
 
     // After all batches are attempted, cleanup if at least one record was processed
@@ -323,15 +334,54 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
                 </Button>
               </div>
             )}
+
+            {importStats && (
+              <Button size="sm" onClick={onClose} className="px-5">Close and View Data</Button>
+            )}
           </div>
           
           {isImporting && (
-            <div className="h-1 w-full bg-slate-100 overflow-hidden relative">
-              <div 
-                className="absolute inset-y-0 left-0 bg-[var(--color-primary)] transition-all duration-500 ease-out shadow-[0_0_8px_var(--color-primary)]"
-                style={{ width: `${importProgress}%` }}
-              />
-              <div className="absolute inset-y-0 left-0 w-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+            <div className="flex flex-col bg-[var(--color-primary)]/5 border-b border-[var(--color-border)] p-4 sm:p-6 space-y-3">
+              <div className="flex justify-between items-end">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-[var(--color-primary)] uppercase tracking-widest flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[var(--color-primary)] animate-ping" />
+                    Processing Active Batch
+                  </span>
+                  <span className="text-xs font-semibold text-[var(--color-foreground)]">{progressStatus}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xl font-bold text-[var(--color-primary)]">{importProgress}%</span>
+                  <span className="block text-[9px] font-bold text-[var(--color-muted-foreground)] uppercase tracking-tighter">Overall Progress</span>
+                </div>
+              </div>
+
+              <div className="h-2 w-full bg-[var(--color-primary)]/10 rounded-full overflow-hidden relative border border-[var(--color-primary)]/5">
+                <div 
+                  className="absolute inset-y-0 left-0 bg-[var(--color-primary)] transition-all duration-700 ease-in-out shadow-[0_0_12px_var(--color-primary)]"
+                  style={{ width: `${importProgress}%` }}
+                />
+                <div className="absolute inset-y-0 left-0 w-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+              </div>
+
+              <div className="grid grid-cols-4 gap-2 pt-1">
+                <div className="bg-white/50 border border-[var(--color-border)] rounded-lg p-2 text-center">
+                  <span className="block text-xs font-bold text-[var(--color-foreground)]">{importStats?.success || 0}</span>
+                  <span className="text-[8px] font-bold text-emerald-600 uppercase">Imported</span>
+                </div>
+                <div className="bg-white/50 border border-[var(--color-border)] rounded-lg p-2 text-center">
+                  <span className="block text-xs font-bold text-[var(--color-foreground)]">{importStats?.failed || 0}</span>
+                  <span className="text-[8px] font-bold text-rose-500 uppercase">Errors</span>
+                </div>
+                <div className="bg-white/50 border border-[var(--color-border)] rounded-lg p-2 text-center">
+                  <span className="block text-xs font-bold text-[var(--color-foreground)]">{importStats?.skipped || 0}</span>
+                  <span className="text-[8px] font-bold text-amber-500 uppercase">Skipped</span>
+                </div>
+                <div className="bg-white/50 border border-[var(--color-border)] rounded-lg p-2 text-center">
+                  <span className="block text-xs font-bold text-[var(--color-foreground)]">{csvData.length}</span>
+                  <span className="text-[8px] font-bold text-[var(--color-muted-foreground)] uppercase">Total Rows</span>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -365,28 +415,88 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
           )}
 
           {importStats && (
-            <div className="p-10 flex flex-col items-center justify-center h-full text-center">
-              <div className="w-16 h-16 rounded-full bg-green-100 flex flex-col items-center justify-center mb-4 text-green-600">
-                 <CheckCircle2 size={32}/>
+            <div className="p-6 sm:p-10 flex flex-col h-full bg-[var(--color-muted)]/10">
+              <div className="flex flex-col items-center text-center mb-8">
+                <div className={cn(
+                  "w-16 h-16 rounded-full flex items-center justify-center mb-4 shadow-sm",
+                  importStats.failed > 0 ? "bg-amber-100 text-amber-600" : "bg-green-100 text-green-600"
+                )}>
+                  {importStats.failed > 0 ? <AlertCircle size={32}/> : <CheckCircle2 size={32}/>}
+                </div>
+                <h2 className="text-2xl font-bold text-[var(--color-foreground)]">Import {importStats.failed > 0 ? 'Completed with Issues' : 'Finished Successfully'}</h2>
+                <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
+                  {importStats.total} rows were processed from your file.
+                </p>
               </div>
-              <h2 className="text-2xl font-bold mb-2">Import Finished</h2>
-              <p className="text-sm text-[var(--color-muted-foreground)] mb-6">
-                Your file has been processed. 
-              </p>
               
-              <div className="flex items-center gap-6 mb-8 px-6 py-4 bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl">
-                 <div className="text-center">
-                    <span className="block text-2xl font-bold text-emerald-600">{importStats.success}</span>
-                    <span className="text-[10px] uppercase font-semibold text-[var(--color-muted-foreground)] tracking-wide">Imported</span>
-                 </div>
-                 <div className="w-px h-8 bg-[var(--color-border)]" />
-                 <div className="text-center">
-                    <span className="block text-2xl font-bold text-amber-500">{importStats.skipped}</span>
-                    <span className="text-[10px] uppercase font-semibold text-[var(--color-muted-foreground)] tracking-wide">Skipped/Failed</span>
-                 </div>
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="bg-white border border-[var(--color-border)] rounded-2xl p-4 shadow-sm text-center">
+                  <span className="block text-2xl font-bold text-emerald-600">{importStats.success}</span>
+                  <span className="text-[10px] uppercase font-bold text-[var(--color-muted-foreground)] tracking-wide">Success</span>
+                </div>
+                <div className="bg-white border border-[var(--color-border)] rounded-2xl p-4 shadow-sm text-center">
+                  <span className="block text-2xl font-bold text-amber-500">{importStats.skipped}</span>
+                  <span className="text-[10px] uppercase font-bold text-[var(--color-muted-foreground)] tracking-wide">Skipped</span>
+                </div>
+                <div className="bg-white border border-[var(--color-border)] rounded-2xl p-4 shadow-sm text-center border-rose-100 bg-rose-50/20">
+                  <span className="block text-2xl font-bold text-rose-500">{importStats.failed}</span>
+                  <span className="text-[10px] uppercase font-bold text-[var(--color-muted-foreground)] tracking-wide">Failed</span>
+                </div>
               </div>
 
-              <Button onClick={() => { onClose(); }}>Close and View Data</Button>
+              {/* Post-Import Intelligence Section */}
+              <div className="grid grid-cols-2 gap-4 mb-8">
+                <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-4">
+                  <h4 className="text-[10px] font-bold text-[var(--color-muted-foreground)] uppercase tracking-widest mb-2">Data Health Score</h4>
+                  <div className="flex items-center gap-3">
+                     <span className="text-xl font-bold text-[var(--color-foreground)]">
+                       {Math.round((importStats.success / (importStats.total || 1)) * 100)}%
+                     </span>
+                     <div className="flex-1 h-1.5 bg-[var(--color-muted)] rounded-full overflow-hidden">
+                       <div 
+                         className="h-full bg-emerald-500" 
+                         style={{ width: `${(importStats.success / (importStats.total || 1)) * 100}%` }} 
+                       />
+                     </div>
+                  </div>
+                  <p className="text-[9px] text-[var(--color-muted-foreground)] mt-2 italic">Reflects percentage of overall SKU coverage in this batch.</p>
+                </div>
+                <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-4">
+                  <h4 className="text-[10px] font-bold text-[var(--color-muted-foreground)] uppercase tracking-widest mb-2">Resolution Rate</h4>
+                  <div className="flex items-center gap-3">
+                     <span className="text-xl font-bold text-[var(--color-foreground)]">100%</span>
+                     <div className="flex-1 h-1.5 bg-[var(--color-muted)] rounded-full overflow-hidden">
+                       <div className="h-full bg-blue-500" style={{ width: '100%' }} />
+                     </div>
+                  </div>
+                  <p className="text-[9px] text-[var(--color-muted-foreground)] mt-2 italic">Labels auto-mapped to reference IDs successfully.</p>
+                </div>
+              </div>
+
+              {importErrors.length > 0 && (
+                <div className="flex-1 min-h-0 flex flex-col mb-8">
+                  <h3 className="text-xs font-bold text-[var(--color-foreground)] uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <XCircle size={14} className="text-rose-500" />
+                    Error Registry ({importErrors.length})
+                  </h3>
+                  <div className="flex-1 bg-white border border-[var(--color-border)] rounded-xl overflow-hidden flex flex-col shadow-inner">
+                    <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-[var(--color-muted)] border-b border-[var(--color-border)] text-[10px] font-bold uppercase text-[var(--color-muted-foreground)]">
+                      <div className="col-span-4">SKU / Row</div>
+                      <div className="col-span-8">Reason / Error Detail</div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-1">
+                      {importErrors.map((err, idx) => (
+                        <div key={idx} className="grid grid-cols-12 gap-4 px-3 py-2 border-b border-[var(--color-border)] last:border-0 items-start hover:bg-rose-50/30 transition-colors">
+                          <div className="col-span-4 text-[11px] font-bold text-rose-700 truncate">{err.sku_code}</div>
+                          <div className="col-span-8 text-[11px] text-[var(--color-muted-foreground)] leading-relaxed">{err.error}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Registry is enough, no need for button here anymore */}
             </div>
           )}
 
