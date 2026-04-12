@@ -94,9 +94,6 @@ class SalesOrder(Base):
     external_sku = Column(String(255), index=True, nullable=True)
     
     order_date = Column(DateTime, index=True, nullable=True)
-    ship_date = Column(DateTime, nullable=True)
-    delivery_date = Column(DateTime, nullable=True)
-    return_date = Column(DateTime, nullable=True)
     
     quantity = Column(Integer, nullable=True)
     unit_selling_price = Column(Float, nullable=True)
@@ -109,11 +106,10 @@ class SalesOrder(Base):
     tracking_id = Column(String(255), nullable=True)
     courier_name = Column(String(255), nullable=True)
     
-    customer_city = Column(String(255), nullable=True)
-    customer_state = Column(String(255), nullable=True)
-    customer_pincode = Column(String(20), nullable=True)
+    customer_location = Column(JSON, nullable=True)
     
     metadata_json = Column(JSON, nullable=True)
+    order_journey = Column(JSON, nullable=True)
     remark = Column(Text, nullable=True)
     
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
