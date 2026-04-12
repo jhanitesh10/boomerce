@@ -30,7 +30,7 @@ function App() {
   const [isHovered, setIsHovered] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  
+
   // Hover Intent Timers
   const hoverTimer = useRef(null);
   const leaveTimer = useRef(null);
@@ -63,7 +63,7 @@ function App() {
 
   return (
     <div className="flex min-h-screen w-full bg-[var(--color-background)] font-sans antialiased text-[var(--color-foreground)] overflow-x-hidden">
-      
+
       {/* ── Mobile Header ── */}
       {isMobile && (
         <header className="fixed top-0 left-0 right-0 h-16 bg-[var(--color-sidebar)] border-b border-[var(--color-border)] z-[60] flex items-center justify-between px-4 shadow-sm">
@@ -74,7 +74,7 @@ function App() {
               <span className="text-[var(--color-foreground)]">erce</span>
             </div>
           </div>
-          <button 
+          <button
             onClick={() => setIsMobileMenuOpen(true)}
             className="p-2 rounded-lg text-[var(--color-muted-foreground)] hover:bg-[var(--color-sidebar-accent)] transition-all active:scale-95"
           >
@@ -85,14 +85,14 @@ function App() {
 
       {/* ── Sidebar Backdrop (Mobile Only) ── */}
       {isMobile && isMobileMenuOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[70] animate-[fade-in_0.2s_ease]"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
       {/* ── Sidebar ── */}
-      <aside 
+      <aside
         onMouseEnter={() => {
           if (isMobile) return;
           if (leaveTimer.current) clearTimeout(leaveTimer.current);
@@ -105,17 +105,15 @@ function App() {
         }}
         className={cn(
           "flex flex-col flex-shrink-0 bg-[var(--color-sidebar)] border-r border-[var(--color-border)] transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-xl shadow-[var(--color-shadow)]",
-          isMobile 
+          isMobile
             ? cn("fixed inset-y-0 left-0 z-[80] w-[280px] transform shadow-2xl ", isMobileMenuOpen ? "translate-x-0" : "-translate-x-full")
             : cn("fixed inset-y-0 left-0 h-full", sidebarWidth)
         )}
       >
         {/* Brand Section */}
         <div className="flex items-center justify-between px-5 py-4 min-h-[72px]">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-[var(--color-primary)]/8">
-              <img src="/bloomerce_logo.svg" alt="Bloomerce" className="h-8 w-8 object-contain" />
-            </div>
+          <div className="flex items-center gap-3 overflow-hidden ml-1">
+            <img src="/bloomerce_logo.svg" alt="Bloomerce" className="h-9 w-9 object-contain flex-shrink-0" />
             {(isSidebarOpen || isHovered || isMobile) && (
               <div className="flex flex-col leading-tight animate-in fade-in slide-in-from-left-2 duration-300">
                 <div className="text-[19px] font-extrabold tracking-tight leading-none">
@@ -155,10 +153,10 @@ function App() {
                 )}
               >
                 <div className={cn(
-                  "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
+                  "flex items-center justify-center w-9 h-9 transition-all duration-200",
                   activeTab === key ? "text-[var(--color-primary)]" : "text-[var(--color-muted-foreground)] group-hover:text-[var(--color-foreground)]"
                 )}>
-                  <Icon size={19} strokeWidth={activeTab === key ? 2 : 1.5} />
+                  <Icon size={20} strokeWidth={activeTab === key ? 2.5 : 2} />
                 </div>
 
                 {(isSidebarOpen || isHovered || isMobile) && (
