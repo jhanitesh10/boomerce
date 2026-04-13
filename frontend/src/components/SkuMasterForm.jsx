@@ -37,11 +37,14 @@ function AutoTextarea({ name, value, onChange, placeholder, rows = 2, className 
 // ─── Helper to resolve Google Drive links ────────────────────────
 const getDirectImageUrl = (url) => {
   if (!url) return '';
-  // Support Google Drive view links
-  // Format: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-  const gdMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) ||
-                  url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+  // Support various Google Drive URL formats (view links, direct links, etc.)
+  // We look for the common /d/FILE_ID pattern or the ?id=FILE_ID pattern
+  const gdMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+                  url.match(/\/d\/([a-zA-Z0-9_-]+)/) ||
+                  url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                  
   if (gdMatch && gdMatch[1]) {
+    // lh3.googleusercontent.com/d/ID is the most direct and reliable format for <img> tags
     return `https://lh3.googleusercontent.com/d/${gdMatch[1]}`;
   }
   return url;
@@ -175,7 +178,8 @@ function ImageBlock({ value, onChange }) {
                        />
                     </div>
                     <p className="text-[10px] text-[var(--color-muted-foreground)] leading-relaxed italic opacity-70">
-                      Paste your Google Drive link above. We'll automatically convert it into a direct stream for the catalog preview.
+                      Paste your Google Drive link above. We'll automatically convert it into a direct stream. 
+                      <span className="text-[var(--color-primary)] font-bold ml-1">Note: Ensure the file is shared as "Anyone with the link".</span>
                     </p>
                  </div>
               </div>

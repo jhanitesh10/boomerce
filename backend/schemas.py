@@ -156,3 +156,11 @@ class SalesOrder(SalesOrderBase):
 
     class Config:
         from_attributes = True
+
+class SalesImportRow(SalesOrderBase):
+    platform_label: Optional[str] = None
+    sku_code: Optional[str] = None
+    barcode: Optional[str] = None
+
+class BulkSalesImportRequest(BaseModel):
+    orders: List[SalesImportRow]

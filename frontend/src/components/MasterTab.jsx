@@ -809,13 +809,17 @@ export default function MasterTab({ isMobile }) {
       <div className={cn("flex justify-between gap-4", isMobile ? "flex-col items-stretch" : "items-center")}>
         <div className={cn(isMobile && "text-center")}>
           <h2 className="text-2xl font-bold text-[var(--color-foreground)] tracking-tight">Products Master</h2>
-          <p className="text-xs text-[var(--color-muted-foreground)] mt-0.5">Click any cell to edit inline · Hover image to open full form</p>
+          {!isMobile && (
+            <p className="text-xs text-[var(--color-muted-foreground)] mt-0.5 animate-in fade-in slide-in-from-top-1 duration-500">
+              Click any cell to edit inline · Hover image to open full form
+            </p>
+          )}
         </div>
         <div className={cn("flex flex-wrap items-center gap-2", isMobile ? "grid grid-cols-2" : "")}>
           <Button 
             variant="outline" 
             size="sm" 
-            className={cn("gap-1.5 h-[36px] font-semibold", isMobile && "w-full text-[11px] px-2")} 
+            className={cn("gap-1.5 h-[36px] font-semibold transition-all", isMobile && "w-full text-[11px] px-2 h-[38px] active:scale-95")} 
             onClick={()=>setIsImportOpen(true)}
           >
             <Upload size={13}/> Import
@@ -823,16 +827,16 @@ export default function MasterTab({ isMobile }) {
           <Button
             variant="outline"
             size="sm"
-            className={cn("gap-1.5 h-[36px] bg-[var(--color-card)] border-[var(--color-border)] text-[var(--color-foreground)] hover:bg-[var(--color-muted)] shadow-sm font-semibold", isMobile && "w-full text-[11px] px-2")}
+            className={cn("gap-1.5 h-[36px] bg-[var(--color-card)] border-[var(--color-border)] text-[var(--color-foreground)] hover:bg-[var(--color-muted)] shadow-sm font-semibold transition-all", isMobile && "w-full text-[11px] px-2 h-[38px] active:scale-95")}
             onClick={() => setIsExportCenterOpen(true)}
           >
             <Download size={13} className="text-[var(--color-muted-foreground)]" /> Export
             {selectedSkus.size > 0 && <span className="ml-0.5 bg-[var(--color-primary)] text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">{selectedSkus.size}</span>}
           </Button>
-          {!isMobile && <Button size="sm" className="gap-1.5 ml-1 h-[36px] font-semibold" onClick={()=>{setEditingSku(null);setIsFormOpen(true);}}><Plus size={14}/> Add Product</Button>}
+          {!isMobile && <Button size="sm" className="gap-1.5 ml-1 h-[36px] font-semibold shadow-sm" onClick={()=>{setEditingSku(null);setIsFormOpen(true);}}><Plus size={14}/> Add Product</Button>}
         </div>
         {isMobile && (
-          <Button size="sm" className="w-full gap-1.5 h-[40px] shadow-lg shadow-[var(--color-primary)]/20 font-bold" onClick={()=>{setEditingSku(null);setIsFormOpen(true);}}><Plus size={16}/> Add New Product</Button>
+          <Button size="sm" className="w-full gap-1.5 h-[42px] shadow-lg shadow-[var(--color-primary)]/20 font-bold active:scale-[0.98] transition-all" onClick={()=>{setEditingSku(null);setIsFormOpen(true);}}><Plus size={16}/> Add New Product</Button>
         )}
       </div>
 

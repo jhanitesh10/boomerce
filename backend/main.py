@@ -3,6 +3,7 @@ import uuid
 from fastapi import FastAPI, Depends, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 import zipfile
 import io
@@ -556,6 +557,137 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
         db.rollback()
         logger.error(f"Bulk Import CRITICAL ERROR: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Bulk Import Logic Error: {str(e)}")
+
+
+# --- Sales Order Import ---
+@app.post("/api/sales/bulk-import")
+def bulk_import_sales(data: schemas.BulkSalesImportRequest, db: Session = Depends(get_db)):
+    import logging
+    
+    logger = logging.getLogger("sales_import")
+    if not logger.handlers:
+        fh = logging.FileHandler("sales_import_errors.log")
+        fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(fh)
+        logger.setLevel(logging.INFO)
+
+    logger.info(f"Sales Bulk Import: Starting for {len(data.orders)} rows")
+    
+    def safe_label(val):
+        if val is None: return ""
+        return str(val).strip()
+
+    try:
+        # 1. Resolve Platforms (Auto-create)
+        unique_platforms = set(safe_label(o.platform_label) for o in data.orders if o.platform_label)
+        platform_map = {}
+        if unique_platforms:
+            existing = db.query(models.ReferenceData).filter(
+                models.ReferenceData.reference_data_type == "PLATFORM",
+                func.lower(models.ReferenceData.label).in_([l.lower() for l in unique_platforms]),
+                models.ReferenceData.deleted_at == None
+            ).all()
+            for r in existing:
+                platform_map[r.label.lower()] = r.id
+            
+            for l in unique_platforms:
+                if l.lower() not in platform_map:
+                    slug = re.sub(r'[^a-z0-9]+', '_', l.lower()).strip('_')
+                    new_ref = models.ReferenceData(
+                        reference_data_type="PLATFORM",
+                        label=l,
+                        key=f"platform_{slug}_{uuid.uuid4().hex[:6]}",
+                        is_active=True
+                    )
+                    db.add(new_ref)
+                    db.flush()
+                    platform_map[l.lower()] = new_ref.id
+
+        # 2. Resolve SKUs
+        unique_sku_codes = set(safe_label(o.sku_code) for o in data.orders if o.sku_code)
+        unique_barcodes = set(safe_label(o.barcode) for o in data.orders if o.barcode)
+        
+        sku_map = {} # code -> id
+        if unique_sku_codes or unique_barcodes:
+            skus = db.query(models.SkuMaster).filter(
+                (models.SkuMaster.sku_code.in_(list(unique_sku_codes))) | 
+                (models.SkuMaster.barcode.in_(list(unique_barcodes))),
+                models.SkuMaster.deletedAt == None
+            ).all()
+            for s in skus:
+                if s.sku_code: sku_map[s.sku_code] = s.id
+                if s.barcode: sku_map[s.barcode] = s.id
+
+        # 3. Process Import
+        success_count = 0
+        failed_count = 0
+        errors = []
+
+        for o_data in data.orders:
+            try:
+                with db.begin_nested():
+                    payload = o_data.model_dump(exclude_unset=True)
+                    
+                    # Resolve IDs
+                    plt_id = platform_map.get(safe_label(o_data.platform_label).lower())
+                    sku_id = sku_map.get(safe_label(o_data.sku_code or o_data.barcode))
+                    
+                    if not plt_id:
+                        raise ValueError(f"Platform '{o_data.platform_label}' resolution failed")
+                    if not sku_id:
+                        raise ValueError(f"SKU '{o_data.sku_code or o_data.barcode}' resolution failed")
+                        
+                    payload["platform_reference_id"] = plt_id
+                    payload["sku_master_id"] = sku_id
+                    
+                    # Defaults
+                    if payload.get("quantity") is None: payload["quantity"] = 1
+                    if not payload.get("order_type"): payload["order_type"] = "ORDER"
+                    
+                    # Cleanup labels
+                    for k in ["platform_label", "sku_code", "barcode"]:
+                        if k in payload: del payload[k]
+
+                    # Deduplication (Platform + Ext Order ID + SKU Master ID)
+                    ext_order_id = payload.get("external_order_id")
+                    
+                    existing_order = db.query(models.SalesOrder).filter(
+                        models.SalesOrder.platform_reference_id == plt_id,
+                        models.SalesOrder.external_order_id == ext_order_id,
+                        models.SalesOrder.sku_master_id == sku_id
+                    ).first()
+
+                    if existing_order:
+                        # Update existing
+                        for k, v in payload.items():
+                            setattr(existing_order, k, v)
+                    else:
+                        # Create new
+                        new_order = models.SalesOrder(**payload)
+                        db.add(new_order)
+                    
+                    db.flush()
+                success_count += 1
+            except Exception as e:
+                failed_count += 1
+                err_msg = str(e)
+                logger.warning(f"Order {o_data.external_order_id} failed: {err_msg}")
+                errors.append({"external_order_id": o_data.external_order_id or "UNKNOWN", "error": err_msg})
+
+        db.commit()
+        return {
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "errors": errors
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Sales Bulk Import CRITICAL ERROR: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Sales Bulk Import Logic Error: {str(e)}")
+
+@app.get("/api/sales", response_model=List[schemas.SalesOrder])
+def get_sales_orders(db: Session = Depends(get_db)):
+    return db.query(models.SalesOrder).order_by(models.SalesOrder.order_date.desc()).all()
 
 
 # ==========================================
