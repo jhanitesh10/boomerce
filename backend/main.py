@@ -66,7 +66,8 @@ def seed_mock_data():
     statuses = [
         models.ReferenceData(reference_data_type="STATUS", label="Active", key="status_active", display_order=1),
         models.ReferenceData(reference_data_type="STATUS", label="Inactive", key="status_inactive", display_order=2),
-        models.ReferenceData(reference_data_type="STATUS", label="Draft", key="status_draft", display_order=3),
+        models.ReferenceData(reference_data_type="STATUS", label="Archived", key="status_archived", display_order=3),
+        models.ReferenceData(reference_data_type="STATUS", label="Upcoming Launches", key="status_upcoming", display_order=4),
     ]
     db.add_all(statuses)
     db.flush()

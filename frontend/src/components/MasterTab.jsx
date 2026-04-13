@@ -176,9 +176,9 @@ const REF_MAP    = {
   pack_type: 'PACK_TYPE'
 };
 const FILTER_TABS = [
-  { key: 'all',            icon: LayoutGrid, label: (c, t) => `All (${t})` },
-  { key: 'draft',          icon: FileEdit,   label: c => `Draft (${c['draft'] || 0})` },
-  { key: 'in development', icon: Rocket,     label: c => `New Launches (${c['in development'] || c['development'] || 0})` },
+  { key: 'all',               icon: LayoutGrid, label: (c, t) => `All (${t})` },
+  { key: 'archived',          icon: FileEdit,   label: c => `Archived (${c['archived'] || 0})` },
+  { key: 'upcoming launches', icon: Rocket,     label: c => `Upcoming Launches (${c['upcoming launches'] || 0})` },
 ];
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 80, 100];
 
