@@ -2,9 +2,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv() # Load variables from .env if present
+# Load variables from .env if present. We use an absolute path relative to this file
+# to ensure it works regardless of where the server is started from.
+env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 # Default to local sqlite for development if docker is not running.
 # To use MySQL, set DATABASE_URL="mysql+pymysql://user:userpassword@127.0.0.1:3306/bloomerce_db"

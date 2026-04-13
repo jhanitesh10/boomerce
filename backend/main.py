@@ -601,7 +601,7 @@ def _generate_drive_url(brand_id: int, cat_id: int, subcat_id: int, sku_code: st
 
     drive = DriveService()
     if not drive.service:
-        raise HTTPException(status_code=500, detail="Google Drive credentials not configured in backend.")
+        raise HTTPException(status_code=500, detail=f"Google Drive Error: {drive.last_error or 'Credentials not configured in backend.'}")
     
     return drive.create_sku_folder_structure(
         brand=brand_label,
@@ -623,7 +623,7 @@ def generate_sku_catalog_url_preview(data: schemas.DriveFolderCreate, db: Sessio
     try:
         drive = DriveService()
         if not drive.service:
-            raise HTTPException(status_code=500, detail="Google Drive credentials not configured in backend.")
+            raise HTTPException(status_code=500, detail=f"Google Drive Error: {drive.last_error or 'Credentials not configured in backend.'}")
         
         url = drive.create_sku_folder_structure(
             brand=data.brand_name.strip(),
@@ -675,7 +675,7 @@ def trash_sku_catalog_folder(id: int, db: Session = Depends(get_db)):
 async def export_sku_images(data: schemas.ImageExportRequest, db: Session = Depends(get_db)):
     drive = DriveService()
     if not drive.service:
-        raise HTTPException(status_code=500, detail="Drive service not initialized")
+        raise HTTPException(status_code=500, detail=f"Google Drive Error: {drive.last_error or 'Drive service not initialized'}")
 
     def get_label(ref_id):
         if not ref_id: return "Unknown"

@@ -1,30 +1,73 @@
 import re
 import os
 import json
+import logging
+from pathlib import Path
+from dotenv import load_dotenv
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+# Configure logger
+logger = logging.getLogger("drive_service")
+if not logger.handlers:
+    sh = logging.StreamHandler()
+    sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(sh)
+    logger.setLevel(logging.INFO)
+
 class DriveService:
     def __init__(self):
-        creds_json = os.getenv("GOOGLE_DRIVE_CREDENTIALS")
-        if not creds_json:
+        self.last_error = None
+        
+        # 1. Try to load environment variables if GOOGLE_DRIVE_CREDENTIALS is not already set
+        if not os.getenv("GOOGLE_DRIVE_CREDENTIALS"):
+            env_path = Path(__file__).parent / ".env"
+            if env_path.exists():
+                load_dotenv(dotenv_path=env_path)
+        
+        creds_source = os.getenv("GOOGLE_DRIVE_CREDENTIALS")
+        
+        if not creds_source:
             self.service = None
-            print("Drive Service: GOOGLE_DRIVE_CREDENTIALS not set.")
+            self.last_error = "GOOGLE_DRIVE_CREDENTIALS environment variable not set."
+            logger.error(self.last_error)
             return
         
         try:
-            info = json.loads(creds_json)
-            # Support both Service Account and Web Client strings (though Service Account is required for automation)
+            # 2. Identify if creds_source is a JSON string or a file path
+            info = None
+            if creds_source.strip().startswith('{'):
+                # It's a JSON string
+                info = json.loads(creds_source)
+            else:
+                # It's likely a file path
+                creds_path = Path(creds_source)
+                if not creds_path.is_absolute():
+                    # Try relative to the backend directory
+                    creds_path = Path(__file__).parent / creds_source
+                
+                if creds_path.exists():
+                    with open(creds_path, 'r') as f:
+                        info = json.load(f)
+                else:
+                    raise ValueError(f"Credentials source looks like a path but file not found: {creds_path}")
+
+            if not info:
+                raise ValueError("Could not resolve credentials info from source.")
+
+            # Support both Service Account and Web Client strings
             if info.get('web'):
-                print("Drive Service WARNING: Detected 'web' client key. Service Account key is required for automated backend tasks.")
+                logger.warning("Detected 'web' client key. Service Account key is required for automated backend tasks.")
             
             self.creds = service_account.Credentials.from_service_account_info(
                 info, scopes=['https://www.googleapis.com/auth/drive']
             )
             self.service = build('drive', 'v3', credentials=self.creds)
+            logger.info("Drive Service initialized successfully.")
         except Exception as e:
-            print(f"Failed to initialize Drive Service: {e}")
+            self.last_error = f"Failed to initialize Drive Service: {str(e)}"
+            logger.error(self.last_error)
             self.service = None
 
     def sanitize_name(self, name):
