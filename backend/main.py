@@ -455,7 +455,7 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
             if s.color_label: unique_refs["COLOR"].add(safe_label(s.color_label))
 
         # 2. Batch resolve existing references
-        ref_map = {} # (type, label_lower) -> id
+        ref_map = {} # (type, label_lower) -> {"id": id, "label": label}
         for ref_type, labels in unique_refs.items():
             if not labels: continue
             existing = db.query(models.ReferenceData).filter(
@@ -464,7 +464,7 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
                 models.ReferenceData.deleted_at == None
             ).all()
             for r in existing:
-                ref_map[(ref_type, r.label.lower())] = r.id
+                ref_map[(ref_type, r.label.lower())] = {"id": r.id, "label": r.label}
 
         # 3. Create missing references (Auto-create logic)
         for ref_type, labels in unique_refs.items():
@@ -485,7 +485,7 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
                         )
                         db.add(new_ref)
                         db.flush()
-                        ref_map[(ref_type, clean_l.lower())] = new_ref.id
+                        ref_map[(ref_type, clean_l.lower())] = {"id": new_ref.id, "label": new_ref.label}
                     except Exception as e:
                         db.rollback()
                         logger.warning(f"Failed to auto-create reference {ref_type}:{clean_l}: {e}")
@@ -496,7 +496,7 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
                             models.ReferenceData.deleted_at == None
                         ).first()
                         if existing_after_fail:
-                            ref_map[(ref_type, clean_l.lower())] = existing_after_fail.id
+                            ref_map[(ref_type, clean_l.lower())] = {"id": existing_after_fail.id, "label": existing_after_fail.label}
 
         # 4. Batch resolve existing SKUs by sku_code
         incoming_sku_codes = [s.sku_code for s in data.skus if s.sku_code]
@@ -526,17 +526,21 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
                     payload = s_data.model_dump(exclude_unset=True)
                     
                     # Resolve IDs from labels
-                    if s_data.brand_label: payload["brand_reference_id"] = ref_map.get(("BRAND", safe_label(s_data.brand_label).lower()))
-                    if s_data.category_label: payload["category_reference_id"] = ref_map.get(("CATEGORY", safe_label(s_data.category_label).lower()))
-                    if s_data.sub_category_label: payload["sub_category_reference_id"] = ref_map.get(("SUB_CATEGORY", safe_label(s_data.sub_category_label).lower()))
-                    if s_data.status_label: payload["status_reference_id"] = ref_map.get(("STATUS", safe_label(s_data.status_label).lower()))
+                    def get_ref(rtype, rlabel):
+                        res = ref_map.get((rtype, safe_label(rlabel).lower()))
+                        return res if res else {"id": None, "label": None}
+
+                    if s_data.brand_label: payload["brand_reference_id"] = get_ref("BRAND", s_data.brand_label)["id"]
+                    if s_data.category_label: payload["category_reference_id"] = get_ref("CATEGORY", s_data.category_label)["id"]
+                    if s_data.sub_category_label: payload["sub_category_reference_id"] = get_ref("SUB_CATEGORY", s_data.sub_category_label)["id"]
+                    if s_data.status_label: payload["status_reference_id"] = get_ref("STATUS", s_data.status_label)["id"]
                     
-                    if s_data.bundle_type_label: payload["bundle_type"] = ref_map.get(("BUNDLE_TYPE", safe_label(s_data.bundle_type_label).lower()))
-                    if s_data.pack_type_label: payload["pack_type"] = ref_map.get(("PACK_TYPE", safe_label(s_data.pack_type_label).lower()))
+                    if s_data.bundle_type_label: payload["bundle_type"] = get_ref("BUNDLE_TYPE", s_data.bundle_type_label)["label"]
+                    if s_data.pack_type_label: payload["pack_type"] = get_ref("PACK_TYPE", s_data.pack_type_label)["label"]
                     
-                    if s_data.net_quantity_unit_label: payload["net_quantity_unit_reference_id"] = ref_map.get(("NET_QUANTITY_UNIT", safe_label(s_data.net_quantity_unit_label).lower()))
-                    if s_data.size_label: payload["size_reference_id"] = ref_map.get(("SIZE", safe_label(s_data.size_label).lower()))
-                    if s_data.color_label: payload["color"] = ref_map.get(("COLOR", safe_label(s_data.color_label).lower()))
+                    if s_data.net_quantity_unit_label: payload["net_quantity_unit_reference_id"] = get_ref("NET_QUANTITY_UNIT", s_data.net_quantity_unit_label)["id"]
+                    if s_data.size_label: payload["size_reference_id"] = get_ref("SIZE", s_data.size_label)["id"]
+                    if s_data.color_label: payload["color"] = get_ref("COLOR", s_data.color_label)["label"]
 
                     # Remove local label fields
                     for k in ["brand_label", "category_label", "sub_category_label", "status_label", "bundle_type_label", "pack_type_label", "net_quantity_unit_label", "size_label", "color_label"]:
