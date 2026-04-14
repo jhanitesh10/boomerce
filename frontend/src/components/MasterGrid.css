@@ -1,0 +1,72 @@
+/* Bloomerce AG Grid Theme - Premium Spreadsheet Aesthetic */
+
+.ag-theme-quartz-bloomerce {
+  --ag-border-color: var(--color-border);
+  --ag-header-background-color: var(--color-muted);
+  --ag-header-foreground-color: var(--color-muted-foreground);
+  --ag-header-cell-hover-background-color: var(--color-muted);
+  --ag-header-cell-moving-background-color: var(--color-muted);
+  
+  --ag-background-color: var(--color-card);
+  --ag-data-color: var(--color-foreground);
+  --ag-odd-row-background-color: var(--color-card);
+  --ag-row-hover-color: color-mix(in srgb, var(--color-primary) 3%, transparent);
+  --ag-selected-row-background-color: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  
+  --ag-font-family: inherit;
+  --ag-font-size: 13.5px;
+  
+  --ag-grid-size: 6px;
+  --ag-list-item-height: 28px;
+  
+  --ag-range-selection-border-color: var(--color-primary);
+  --ag-range-selection-background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  
+  border: none;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px -10px var(--color-shadow);
+  backdrop-filter: blur(8px);
+}
+
+.ag-theme-quartz-bloomerce .ag-header {
+  border-bottom: 2px solid var(--color-border);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+}
+
+.ag-theme-quartz-bloomerce .ag-row {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ag-theme-quartz-bloomerce .ag-cell {
+  display: flex !important;
+  align-items: center !important;
+  padding-left: 14px !important;
+  padding-right: 14px !important;
+  border-right: 1px solid color-mix(in srgb, var(--color-border) 15%, transparent) !important;
+  outline: none !important;
+}
+
+/* Custom Group Headings Styling (Matching the Emerald/Violet theme) */
+.ag-header-group-cell {
+  border-left: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent) !important;
+  background-color: color-mix(in srgb, var(--color-primary) 4%, var(--color-muted)) !important;
+}
+
+/* Specific Group Colors Sync */
+.header-identity { background-color: rgba(139, 92, 246, 0.05) !important; color: #8b5cf6 !important; }
+.header-pricing { background-color: rgba(16, 185, 129, 0.05) !important; color: #10b981 !important; }
+.header-bundling { background-color: rgba(245, 158, 11, 0.05) !important; color: #f59e0b !important; }
+.header-content { background-color: rgba(249, 115, 22, 0.05) !important; color: #f97316 !important; }
+
+/* Custom Scrollbar */
+.ag-body-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary) transparent;
+}
+.ag-body-viewport::-webkit-scrollbar { width: 6px; height: 6px; }
+.ag-body-viewport::-webkit-scrollbar-thumb { background: var(--color-primary); border-radius: 10px; opacity: 0.3; }

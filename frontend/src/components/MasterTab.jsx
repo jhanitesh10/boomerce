@@ -5,8 +5,17 @@ import {
   AlertCircle, Copy, Layers, Command, MoreVertical
 } from 'lucide-react';
 
-
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { AgGridReact } from 'ag-grid-react';
+import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
+
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-quartz.css';
+import './MasterGrid.css';
+
+// Register all community modules
+ModuleRegistry.registerModules([AllCommunityModule]);
+
 import { createPortal } from 'react-dom';
 import SkuMasterForm from './SkuMasterForm';
 import InlineCellEditor from './InlineCellEditor';
@@ -29,14 +38,6 @@ function StatusBadge({ label }) {
   return <Badge variant={STATUS_VARIANTS[key] || 'secondary'}>{display || 'Unknown'}</Badge>;
 }
 
-// ── Base columns (always visible, rowSpan=2, pinned left) ─────────────────────
-const BASE_COLS = [
-  { id: 'actions',            label: '',         width: 82,  align: 'center', noInline: true, sticky: true, stickyLeft: 0 },
-  { id: 'primary_image_url',  label: 'Image',    width: 76,  align: 'center', noInline: true, sticky: true, stickyLeft: 82 },
-  { id: 'product_name',       label: 'Product',  width: 260, sortable: true,  sticky: true, stickyLeft: 158 },
-  { id: 'barcode',            label: 'SKU / EAN / Barcode ID',  width: 140, isMono: true,    sticky: true, stickyLeft: 418 },
-  { id: 'brand_reference_id', label: 'Brand',    width: 120, sortable: true,  sticky: true, stickyLeft: 558 },
-];
 
 const REMARKS_COL = { id: 'remark', label: 'Notes', width: 62, align: 'center', sticky: true, isRight: true };
 
@@ -169,8 +170,6 @@ function CardSkeleton() {
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const NON_INLINE = new Set(['primary_image_url', 'net_content', 'content_trigger', 'catalog_url', 'remark']);
 const REF_MAP    = {
   brand_reference_id: 'BRAND',
   category_reference_id: 'CATEGORY',
@@ -419,6 +418,10 @@ export default function MasterTab({ isMobile }) {
   const noteDraftRef   = useRef('');
   const savingRef      = useRef(false);
 
+  // -- AG Grid State & Hooks --
+  const [gridApi, setGridApi] = useState(null);
+  const onGridReady = useCallback((params) => setGridApi(params.api), []);
+
   // Sync active note ID to localStorage — validate against loaded SKUs to avoid broken popovers
   useEffect(() => {
     if (activeNoteSkuId) {
@@ -535,6 +538,138 @@ export default function MasterTab({ isMobile }) {
   // ── Global Event Listeners ──────────────────────────────────────────────────
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  // -- AG Grid Handlers --
+  const onCellValueChanged = useCallback(async (params) => {
+     const { data, colDef, newValue } = params;
+     const colId = colDef.field;
+     if (newValue !== undefined) {
+        setSkus(prev => prev.map(s => s.id === data.id ? { ...s, [colId]: newValue } : s));
+        try {
+           await skuApi.update(data.id, { [colId]: newValue });
+        } catch (err) {
+           console.error('Grid save failed:', err);
+           loadAll();
+        }
+     }
+  }, [loadAll]);
+
+  const columnDefs = useMemo(() => {
+    const baseCols = [
+      {
+        headerName: 'Identity',
+        pinned: 'left',
+        lockPinned: true,
+        children: [
+          {
+            headerCheckboxSelection: true,
+            checkboxSelection: true,
+            width: 45,
+            pinned: 'left',
+            suppressHeaderMenuButton: true,
+          },
+          {
+            headerName: 'Img',
+            field: 'primary_image_url',
+            width: 55,
+            pinned: 'left',
+            cellRenderer: (p) => p.value ? (
+               <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-200 mt-2">
+                 <img src={p.value} className="w-full h-full object-cover" />
+               </div>
+            ) : <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center mt-2 text-slate-300"><ImageIcon size={14}/></div>
+          },
+          {
+            headerName: 'Product Name',
+            field: 'product_name',
+            width: 250,
+            pinned: 'left',
+            sortable: true,
+            filter: true,
+            editable: true,
+            cellClass: 'font-bold text-slate-900',
+          },
+          {
+            headerName: 'SKU/Barcode',
+            field: 'sku_code',
+            width: 160,
+            pinned: 'left',
+            editable: true,
+            cellClass: 'font-mono text-[11px] text-slate-500',
+            valueGetter: p => p.data.sku_code || p.data.barcode || '—'
+          }
+        ]
+      }
+    ];
+
+    const groupCols = GROUPS.map(g => ({
+      headerName: g.label,
+      marryChildren: true,
+      headerClass: `ag-group-header-${g.color}`,
+      children: g.cols.map(c => {
+        const isRef = !!REF_MAP[c.id];
+        const refKey = REF_MAP[c.id];
+        
+        return {
+          headerName: c.label,
+          field: c.id,
+          width: c.width || 120,
+          editable: !c.noInline,
+          sortable: !!c.sortable,
+          cellClass: cn(
+            c.align === 'right' && 'text-right',
+            c.isMono && 'font-mono text-[11px]',
+            c.isNum && 'tabular-nums font-semibold',
+            isRef && 'cursor-pointer hover:bg-slate-50/50'
+          ),
+          valueFormatter: p => {
+             if (isRef && references[refKey]) return references[refKey][p.value] || p.value || '—';
+             if (c.id === 'mrp' || c.id === 'purchase_cost') return p.value ? `₹${Number(p.value).toLocaleString('en-IN')}` : '—';
+             return p.value || '—';
+          },
+          cellEditor: isRef ? 'agSelectCellEditor' : (c.isNum ? 'agNumberCellEditor' : 'agTextCellEditor'),
+          cellEditorParams: isRef ? {
+             values: refLists[refKey]?.map(r => r.id) || [],
+             useFormatter: true,
+          } : {},
+          cellRenderer: c.id === 'status_reference_id' ? (p) => {
+             const lbl = references.STATUS[p.value];
+             return <StatusBadge label={lbl} />;
+          } : undefined
+        };
+      })
+    }));
+
+    return [...baseCols, ...groupCols, [
+        {
+          headerName: 'Actions',
+          pinned: 'right',
+          lockPinned: true,
+          width: 80,
+          cellRenderer: (p) => (
+            <div className="flex items-center gap-1 mt-1.5">
+               <button 
+                  onClick={() => { setEditingSku(p.data); setIsFormOpen(true); }}
+                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors"
+               >
+                 <SquarePen size={15} />
+               </button>
+               <button 
+                  onClick={() => setActiveNoteSkuId(p.data.id)}
+                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-amber-600 transition-colors"
+               >
+                 <StickyNote size={15} />
+               </button>
+            </div>
+          )
+        }
+    ][0]];
+  }, [references, refLists, isMobile]);
+
+  const defaultColDef = useMemo(() => ({
+    resizable: true,
+    suppressHeaderMenuButton: false,
+  }), []);
+
   // Handle clicking outside of cells, editors or notes
   useEffect(() => {
     const handleGlobalClick = (e) => {
@@ -646,260 +781,6 @@ export default function MasterTab({ isMobile }) {
     for (const g of GROUPS) for (const col of g.cols) map[col.id] = g;
     return map;
   }, []);
-
-// ── Cell renderer ───────────────────────────────────────────────────────────
-const renderCell = (col, sku, openFullEdit) => {
-  const isEditing = inlineEdit?.skuId === sku.id && inlineEdit?.colId === col.id;
-  const isSelected = selectedCell?.skuId === sku.id && selectedCell?.colId === col.id;
-
-  if (isEditing) {
-    return (
-      <InlineCellEditor
-        col={col}
-        sku={sku}
-        initialValue={sku[col.id]}
-        refLists={refLists}
-        onSave={(val) => saveInlineEdit(sku.id, col.id, val)}
-        onCancel={cancelInlineEdit}
-      />
-    );
-  }
-  const val = sku[col.id];
-  switch (col.id) {
-    case 'actions': return (
-      <button onClick={openFullEdit} className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] text-[var(--color-muted-foreground)] transition-all mx-auto focus:opacity-100" title="Edit Full Product">
-        <SquarePen size={15} />
-      </button>
-    );
-    case 'primary_image_url': {
-      const directUrl = getDirectImageUrl(val);
-      return (
-        <div className="w-10 h-10 mx-auto rounded-xl overflow-hidden border border-[var(--color-border)]">
-          {directUrl ? <img src={directUrl} alt="sku" className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center bg-[var(--color-muted)]"><ImageIcon size={16} className="text-[var(--color-muted-foreground)]"/></div>}
-        </div>
-      );
-    }
-    case 'barcode': {
-      const barcodeVal = sku.sku_code || sku.barcode || '';
-      return (
-        <div className="flex items-center justify-between gap-1 group/item">
-          <span className="font-mono text-xs font-semibold text-[var(--color-foreground)] truncate">
-            {barcodeVal || <EmptyState isLine />}
-          </span>
-          {barcodeVal && (
-            <CopyButton
-              value={barcodeVal}
-              className="opacity-100 md:opacity-0 group-hover/item:opacity-100"
-              title="Copy SKU/Barcode"
-            />
-          )}
-        </div>
-      );
-    }
-    case 'product_name': return (
-      <div className="flex items-center justify-between gap-2 group/item min-w-0">
-        <div className="flex flex-col gap-1 min-w-0 flex-1">
-          <span className="font-medium text-[var(--color-foreground)]/85 text-[13.5px] leading-snug whitespace-normal break-words line-clamp-2" title={val}>
-            {val || <span className="text-[var(--color-muted-foreground)] font-normal italic text-[11px]">Unnamed Product</span>}
-          </span>
-        </div>
-        {val && (
-          <CopyButton
-            value={val}
-            className="opacity-100 md:opacity-0 group-hover/item:opacity-100 flex-shrink-0"
-            title="Copy Product Name"
-          />
-        )}
-      </div>
-    );
-    case 'status_reference_id': {
-      const lbl = references.STATUS[val];
-      return (
-        <div className="flex items-center justify-between gap-1 w-full group/ref bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg px-2 py-1 shadow-sm hover:border-[var(--color-primary)]/50 transition-all">
-          {lbl ? <StatusBadge label={lbl}/> : <EmptyState isLine />}
-          <ChevronDown size={14} className="text-[var(--color-muted-foreground)] opacity-70 group-hover/ref:text-[var(--color-primary)] transition-colors" />
-        </div>
-      );
-    }
-    case 'brand_reference_id': {
-      const label = references.BRAND[val];
-      return (
-        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-[var(--color-muted)]/20 border border-[var(--color-border)]/50 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-card)] transition-all">
-          <span className={cn("text-[13px] font-bold truncate flex items-center gap-1.5", label ? "text-[var(--color-foreground)]" : "text-amber-600 italic font-medium")}>
-            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
-            {label || val || <EmptyState isLine />}
-          </span>
-          <ChevronDown size={14} className="text-[var(--color-muted-foreground)] opacity-70 group-hover/ref:text-[var(--color-primary)] transition-colors flex-shrink-0" />
-        </div>
-      );
-    }
-    case 'category_reference_id': {
-      const label = references.CATEGORY[val];
-      return (
-        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-[var(--color-muted)]/10 border border-[var(--color-border)]/40 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-card)] transition-all">
-          <span className={cn("text-[13px] truncate flex items-center gap-1.5", label ? "text-[var(--color-foreground)]" : "text-amber-600 italic font-medium")}>
-            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
-            {label || <EmptyState isLine />}
-          </span>
-          <ChevronDown size={14} className="text-[var(--color-muted-foreground)] opacity-60 group-hover/ref:text-[var(--color-primary)] transition-colors flex-shrink-0" />
-        </div>
-      );
-    }
-    case 'sub_category_reference_id': {
-      const label = references.SUB_CATEGORY[val];
-      return (
-        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-[var(--color-muted)]/10 border border-[var(--color-border)]/40 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-card)] transition-all">
-          <span className={cn("text-[13px] truncate flex items-center gap-1.5", label ? "text-[var(--color-muted-foreground)]" : "text-amber-600 italic font-medium")}>
-            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
-            {label || <EmptyState isLine />}
-          </span>
-          <ChevronDown size={14} className="text-[var(--color-muted-foreground)] opacity-60 group-hover/ref:text-[var(--color-primary)] transition-colors flex-shrink-0" />
-        </div>
-      );
-    }
-    case 'bundle_type': {
-      const label = references.BUNDLE_TYPE[val];
-      return (
-        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-amber-50/20 border border-amber-200/50 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-amber-400/50 hover:bg-white transition-all">
-          <span className={cn("text-[13px] font-medium truncate flex items-center gap-1.5", label ? "text-amber-900" : "text-amber-600 italic")}>
-            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
-            {label || val || <EmptyState isLine />}
-          </span>
-          <ChevronDown size={14} className="text-amber-500/60 group-hover/ref:text-amber-600 transition-colors flex-shrink-0" />
-        </div>
-      );
-    }
-    case 'pack_type': {
-      const label = references.PACK_TYPE[val];
-      return (
-        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-amber-50/10 border border-amber-200/30 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-amber-400/50 hover:bg-white transition-all">
-          <span className={cn("text-[13px] truncate flex items-center gap-1.5", label ? "text-amber-800/80" : "text-amber-600 italic font-medium")}>
-            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
-            {label || val || <EmptyState isLine />}
-          </span>
-          <ChevronDown size={14} className="text-amber-500/50 group-hover/ref:text-amber-600 transition-colors flex-shrink-0" />
-        </div>
-      );
-    }
-    case 'net_quantity_unit_reference_id': {
-      const label = references.NET_QUANTITY_UNIT[val];
-      return (
-        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-emerald-50/20 border border-emerald-200/30 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-emerald-400/50 hover:bg-white transition-all">
-          <span className={cn("text-[13px] font-medium truncate flex items-center gap-1.5", label ? "text-emerald-900" : "text-amber-600 italic")}>
-            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
-            {label || val || <EmptyState isLine />}
-          </span>
-          <ChevronDown size={14} className="text-emerald-500/60 group-hover/ref:text-emerald-600 transition-colors flex-shrink-0" />
-        </div>
-      );
-    }
-    case 'size_reference_id': {
-      const label = references.SIZE[val];
-      return (
-        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-emerald-50/10 border border-emerald-200/30 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-emerald-400/50 hover:bg-white transition-all">
-          <span className={cn("text-[13px] truncate flex items-center gap-1.5", label ? "text-emerald-800/80" : "text-amber-600 italic font-medium")}>
-            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
-            {label || val || <EmptyState isLine />}
-          </span>
-          <ChevronDown size={14} className="text-emerald-500/50 group-hover/ref:text-emerald-600 transition-colors flex-shrink-0" />
-        </div>
-      );
-    }
-    case 'color': {
-      // Priority 1: Direct lookup in COLOR references (handles IDs, Numeric Strings, and Keys)
-      // Priority 2: Fallback to the raw value
-      const label = references.COLOR[val] || val;
-      return (
-        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-emerald-50/5 border border-emerald-200/20 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-emerald-400/50 hover:bg-white transition-all">
-          <span className={cn("text-[13px] truncate flex items-center gap-1.5", label ? "text-emerald-800/70" : "text-amber-600 italic font-medium")}>
-            {label || <EmptyState isLine />}
-          </span>
-          <ChevronDown size={14} className="text-emerald-500/40 group-hover/ref:text-emerald-600 transition-colors flex-shrink-0" />
-        </div>
-      );
-    }
-    case 'finished_product_weight': {
-      const pWeight = parseFloat(sku.package_weight) || 0;
-      const rWeight = parseFloat(sku.raw_product_weight) || 0;
-      const total = (pWeight > 0 || rWeight > 0) ? Math.round(pWeight + rWeight) : null;
-      return total != null ? <span className="text-sm font-bold text-[var(--color-primary)] tabular-nums">{total}</span> : <EmptyState />;
-    }
-    case 'tax_percent':  return val != null ? <span className="text-sm text-[var(--color-muted-foreground)] opacity-70">{`${val}%`}</span> : <EmptyState />;
-    case 'catalog_url':  return val ? (
-      <div className="flex items-center justify-center gap-1 group/item">
-        <a
-          href={val}
-          target="_blank"
-          rel="noreferrer"
-          onClick={e=>e.stopPropagation()}
-          className="flex items-center justify-center p-1.5 rounded-lg hover:bg-[var(--color-primary)]/10 text-[var(--color-primary)] transition-all shadow-sm border border-[var(--color-primary)]/20"
-          title="Open in Google Drive"
-        >
-          <ExternalLink size={14} />
-        </a>
-        <CopyButton
-          value={val}
-          className="opacity-100 md:opacity-0 group-hover/item:opacity-100"
-          title="Copy Drive Link"
-        />
-      </div>
-    ) : <EmptyState />;
-    case 'createdAt': {
-      if (!val) return <EmptyState />;
-      const d = new Date(val);
-      return (
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold text-[var(--color-foreground)] leading-tight">{d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-          <span className="text-[10px] text-[var(--color-muted-foreground)] tabular-nums opacity-70 uppercase">{d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
-        </div>
-      );
-    }
-
-    case 'remark': return (
-      <div className="flex items-center justify-center w-full h-full">
-        <button
-          onClick={(e) => { e.stopPropagation(); setActiveNoteSkuId(prev => prev === sku.id ? null : sku.id); }}
-          className={cn(
-            "note-trigger p-2 rounded-lg transition-all relative",
-            val ? "text-[var(--color-primary)] bg-[var(--color-primary)]/10" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
-          )}
-          title={val || "Add Note"}
-        >
-          <StickyNote size={15} fill={val ? "currentColor" : "none"} fillOpacity={0.2} />
-          {val && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-[var(--color-primary)] rounded-full border border-white" />}
-        </button>
-      </div>
-    );
-
-    default:
-      if (val==null||val==='') return <EmptyState />;
-      if (col.isNum)    return (
-        <div className="group/item flex items-center justify-end gap-1.5">
-          <span className="font-semibold text-sm tabular-nums text-[var(--color-foreground)]">₹{Number(val).toLocaleString('en-IN')}</span>
-          <CopyButton value={val} className="opacity-100 md:opacity-0 group-hover/item:opacity-100 h-6 w-6" iconSize={12} title={`Copy ${col.labelValue || col.label}`} />
-        </div>
-      );
-      if (col.isMono)   return (
-        <div className="group/item flex items-center justify-between gap-1.5">
-          <span className="font-mono text-xs text-[var(--color-muted-foreground)] truncate">{val}</span>
-          <CopyButton value={val} className="opacity-100 md:opacity-0 group-hover/item:opacity-100 h-6 w-6" iconSize={12} title={`Copy ${col.label}`} />
-        </div>
-      );
-      if (col.isContent) return (
-        <div className="group/item relative max-w-full flex items-start justify-between gap-1">
-          <span className="text-[10.5px] text-[var(--color-muted-foreground)]/60 line-clamp-3 leading-relaxed cursor-help hover:text-[var(--color-foreground)] transition-colors flex-1" title={val}>
-            {val}
-          </span>
-          <CopyButton
-            value={val}
-            className="opacity-100 md:opacity-0 group-hover/item:opacity-100 flex-shrink-0"
-            title={`Copy ${col.label}`}
-          />
-        </div>
-      );
-      return <span className={cn("text-sm transition-colors", isSelected ? "text-[var(--color-primary)] font-semibold" : "text-[var(--color-foreground)]")}>{val}</span>;
-  }
-};
 
 
   // Expand / Collapse All
@@ -1104,196 +985,118 @@ const renderCell = (col, sku, openFullEdit) => {
           )}
         </div>
       ) : (
-        <div className="bg-[var(--color-card)] rounded-xl border border-[var(--color-border)] shadow-sm overflow-hidden">
-          <div className="overflow-x-auto" style={{scrollbarWidth:'thin'}}>
-            <table className="w-full border-collapse" style={{borderSpacing:0}}>
-              <thead>
-                {/* ── Row 1: base cols (rowSpan=2) + group parent headers ── */}
-                <tr>
-                  <th colSpan={BASE_COLS.length}
-                    className="px-3 pt-2 pb-1 text-center border-b border-b-transparent sticky z-30 bg-[var(--color-muted)] shadow-[inset_-1px_0_0_var(--color-border)]"
-                    style={{ left: 0, minWidth: BASE_COLS.reduce((sum, c) => sum + (c.width || 0), 0) }}>
-                    <div className="flex items-center justify-center gap-2">
-                       <span className="text-[11px] font-bold tracking-wider uppercase">Identity</span>
-                    </div>
-                  </th>
-
-                  {GROUPS.map(g => {
-                    const expanded = expandedGroups.size > 0 && expandedGroups.has(g.id);
-                    const colSpan  = expanded ? g.cols.length : 1;
-                    const hiddenN  = g.cols.length - 1;
-                    const gc       = GC[g.color];
-                    return (
-                      <th key={g.id} colSpan={colSpan}
-                        className={cn("px-3 pt-2 pb-1 text-center border-l border-[var(--color-border)] border-b border-b-transparent", gc.row1)}
-                        style={{minWidth: expanded ? g.cols.reduce((s,c)=>s+c.width,0) : g.cols[0].width}}>
-                        <div className="flex items-center justify-center gap-2">
-                          <span className="text-[11px] font-bold tracking-wider uppercase">{g.label}</span>
-                          <button onClick={()=>toggleGroup(g.id)} className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all", gc.pill)}>
-                            {expanded
-                              ? <><Minimize2 size={12}/><span>Collapse</span></>
-                              : <><Maximize2 size={12}/><span>Expand ({hiddenN})</span></>}
-                          </button>
-                        </div>
-                      </th>
-                    );
-                  })}
-
-                  {/* Placeholder for Sticky Notes in Group Row */}
-                  <th className="sticky top-0 right-0 z-30 bg-[var(--color-muted)] border-b border-l border-[var(--color-border)] shadow-[inset_1px_0_0_var(--color-border)]" />
-                </tr>
-
-
-                {/* ── Row 2: group sub-column names ── */}
-                <tr>
-                  {BASE_COLS.map((col) => (
-                    <th key={col.id}
-                      className={cn("px-4 py-2.5 text-left whitespace-nowrap select-none border-b-2 border-l border-[var(--color-border)]/30 bg-[var(--color-muted)]",
-                        col.sticky && "sticky z-20 shadow-[inset_-1px_0_0_var(--color-border)]")}
-                       style={{width:col.width, minWidth:col.width, textAlign:col.align||'left', left:col.sticky? col.stickyLeft :undefined}}>
-                      <span onClick={()=>col.sortable&&handleSort(col.id)} className={cn("text-[10.5px] font-semibold tracking-wider uppercase text-[var(--color-muted-foreground)]/80", col.sortable&&"cursor-pointer hover:text-[var(--color-primary)] transition-colors")}>
-                        {col.label}
-                        {col.sortable&&sortCol===col.id&&<ArrowUpDown size={10} className="inline ml-1 text-[var(--color-primary)]"/>}
-                        {col.sortable&&sortCol!==col.id&&<ArrowUpDown size={10} className="inline ml-1 opacity-20"/>}
-                      </span>
-                    </th>
-                  ))}
-
-                  {GROUPS.map(g => {
-                    const expanded  = expandedGroups.has(g.id);
-                    const shownCols = expanded ? g.cols : [g.cols[0]];
-                    const gc        = GC[g.color];
-                    return shownCols.map((col, idx) => (
-                      <th key={col.id}
-                        className={cn("px-4 py-2.5 text-left whitespace-nowrap select-none border-b-2 border-[var(--color-border)] border-l",
-                           gc.row2)}
-                        style={{width:col.width, minWidth:col.width, textAlign:col.align||'left'}}>
-                        <span onClick={()=>col.sortable&&handleSort(col.id)} className={cn("text-[10.5px] font-semibold tracking-wider uppercase text-[var(--color-muted-foreground)]/80", col.sortable&&"cursor-pointer hover:text-[var(--color-primary)] transition-colors")}>
-                          {col.label}
-                          {col.sortable&&sortCol===col.id&&<ArrowUpDown size={10} className="inline ml-1 text-[var(--color-primary)]"/>}
-                          {col.sortable&&sortCol!==col.id&&<ArrowUpDown size={10} className="inline ml-1 opacity-20"/>}
-                        </span>
-                      </th>
-                    ));
-                  })}
-
-
-                  {/* Content for Sticky Notes in Sub-column Row */}
-                  <th className="sticky top-0 right-0 z-40 p-3 bg-[var(--color-muted)] border-b-2 border-l border-[var(--color-border)] shadow-[inset_1px_0_0_var(--color-border)]">
-                    <div className="flex items-center justify-center gap-1.5 opacity-60">
-                      <StickyNote size={13} className="text-[var(--color-muted-foreground)]" />
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-muted-foreground)]">Notes</span>
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-
-
-              <tbody>
-                {loading ? (
-                   <>
-                     <TableRowSkeleton visibleCols={visibleCols} />
-                     <TableRowSkeleton visibleCols={visibleCols} />
-                     <TableRowSkeleton visibleCols={visibleCols} />
-                     <TableRowSkeleton visibleCols={visibleCols} />
-                     <TableRowSkeleton visibleCols={visibleCols} />
-                     <TableRowSkeleton visibleCols={visibleCols} />
-                     <TableRowSkeleton visibleCols={visibleCols} />
-                     <TableRowSkeleton visibleCols={visibleCols} />
-                   </>
-                ) : paginated.length===0 ? (
-                  <tr>
-                    <td colSpan={visibleCols.length} className="py-24 text-center">
-                      <div className="flex flex-col items-center justify-center gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-[var(--color-muted)] flex items-center justify-center text-[var(--color-muted-foreground)]/30">
-                          <Search size={24} />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-[var(--color-foreground)]">No products found</p>
-                          <p className="text-xs text-[var(--color-muted-foreground)] mt-1">Try adjusting your filters or search terms to find what you're looking for.</p>
-                        </div>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() => { setSearch(''); setFilters(initialFilters); setStatusFilter('all'); setPage(1); }}
-                          className="mt-2 h-9 px-5 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-white font-bold text-xs gap-2 shadow-lg shadow-[var(--color-primary)]/20"
-                        >
-                          <RefreshCcw size={14} />
-                          Clear all filters
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ) : paginated.map(sku => {
-                  const openFullEdit = () => { setEditingSku(sku); setIsFormOpen(true); };
-                  return (
-                    <tr key={sku.id} className="group transition-colors bg-[var(--color-card)] hover:bg-[var(--color-muted)]/30">
-                      {visibleCols.map((col) => {
-                        const isActive   = inlineEdit?.skuId===sku.id && inlineEdit?.colId===col.id;
-                        const isSelected = selectedCell?.skuId===sku.id && selectedCell?.colId===col.id && !isActive;
-                        const canInline  = !col.noInline && !NON_INLINE.has(col.id) && col.id!=='primary_image_url';
-                        const grp        = colGroupMap[col.id];
-                        const gc         = grp ? GC[grp.color] : null;
-                        // First col of a group gets a left border
-                        const isFirstGroupCol = grp && GROUPS.find(g=>g.id===grp.id)?.cols[0]?.id===col.id;
-                        const isNoteActive = activeNoteSkuId === sku.id;
-                        const isRefField = !!REF_MAP[col.id];
-                        return (
-                          <td key={`${sku.id}-${col.id}`}
-                            tabIndex={-1}
-                            onMouseDown={isActive ? undefined : (e) => {
-                              e.currentTarget.focus();
-                              setSelectedCell({skuId: sku.id, colId: col.id});
-                              if (isRefField && canInline) {
-                                startInlineEdit(sku, col.id);
-                                setSelectedCell(null);
-                              }
-                            }}
-                            onClick={(e) => { e.preventDefault(); }}
-                            onDoubleClick={(isActive || !canInline || isRefField) ? undefined : () => { startInlineEdit(sku, col.id); setSelectedCell(null); }}
-                            className={cn(
-                              "transition-all relative group/cell outline-none animate-in fade-in duration-300",
-                              "border-b border-[var(--color-border)] py-2.5 cursor-default align-middle",
-                              (col.id === 'product_name' || col.id === 'barcode') ? "px-4" : "px-2",
-                              isActive && "z-10",
-                              isSelected && "cell-active z-10 outline-none animate-focus-pulse",
-                              col.sticky && "sticky z-20 bg-[var(--color-card)]",
-                               col.sticky && !col.isRight && "shadow-[4px_0_12px_var(--color-shadow)] after:absolute after:inset-y-0 after:right-0 after:w-[1px] after:bg-[var(--color-border)]",
-                              col.sticky && col.isRight && "right-0 shadow-[inset_1px_0_0_var(--color-border)]",
-                              /* Ensure open popover is above everything */
-                              isNoteActive && col.id === 'remark' && "z-[50] overflow-visible",
-                              /* Ensure base columns have a right border when scrolling */
-                              col.sticky && !col.isRight && (col.id === 'brand_reference_id' ? "!shadow-[inset_-1px_0_0_var(--color-border)]" : ""),
-                              gc && !isActive && !isSelected && gc.td,
-                              "border-l border-[var(--color-border)]/30",
-                              isFirstGroupCol && "border-l border-[var(--color-border)]",
-                            )}
-                            style={{
-                              width: col.width, minWidth: col.width,
-                              maxWidth: col.width,
-                              left: col.sticky && !col.isRight ? col.stickyLeft : undefined,
-                              right: col.sticky && col.isRight ? 0 : undefined,
-                              textAlign: col.align||'left',
-                              overflow: (isActive || isNoteActive) ? 'visible' : 'hidden',
-                              textOverflow: 'ellipsis', whiteSpace: (isActive || col.id === 'product_name' || col.isContent) ? 'normal' : 'nowrap',
-                            }}>
-                            {renderCell(col, sku, openFullEdit)}
-                          </td>
-
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+      {/* ── Table / Grid Section ── */}
+      <div className="flex-1 min-h-0 relative group">
+        {loading ? (
+          <div className="h-[calc(100vh-280px)] w-full flex items-center justify-center bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)]">
+             <div className="flex flex-col items-center gap-4">
+                <RefreshCcw size={32} className="text-[var(--color-primary)] animate-spin opacity-50" />
+                <p className="text-sm font-bold text-[var(--color-muted-foreground)]">Loading high-performance catalog...</p>
+             </div>
           </div>
-        </div>
-      )}
+        ) : filtered.length === 0 ? (
+          <div className="h-[calc(100vh-280px)] w-full flex flex-col items-center justify-center bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] gap-4">
+             <div className="w-12 h-12 rounded-2xl bg-[var(--color-muted)] flex items-center justify-center text-[var(--color-muted-foreground)]/30">
+                <Search size={24} />
+             </div>
+             <div className="text-center">
+                <p className="text-sm font-bold text-[var(--color-foreground)]">No products found</p>
+                <p className="text-xs text-[var(--color-muted-foreground)] mt-1">Try adjusting your filters or search terms.</p>
+             </div>
+             <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setSearch(''); setFilters(initialFilters); setStatusFilter('all'); setPage(1); }}
+                className="mt-2 text-xs font-bold"
+             >
+                Clear all filters
+             </Button>
+          </div>
+        ) : (
+          <div className="h-[calc(100vh-280px)] w-full ag-theme-quartz ag-theme-quartz-bloomerce relative">
+            <AgGridReact
+              rowData={filtered}
+              columnDefs={columnDefs}
+              defaultColDef={defaultColDef}
+              onGridReady={onGridReady}
+              onSelectionChanged={(e) => {
+                const selected = e.api.getSelectedRows();
+                setSelectedSkus(new Set(selected.map(s => s.id)));
+              }}
+              onCellValueChanged={onCellValueChanged}
+              rowSelection="multiple"
+              suppressRowClickSelection={true}
+              enableRangeSelection={true}
+              copyHeadersToClipboard={false}
+              stopEditingWhenCellsLoseFocus={true}
+              animateRows={false}
+              headerHeight={45}
+              rowHeight={52}
+              getContextMenuItems={() => [
+                'copy',
+                'separator',
+                {
+                  name: 'Duplicate SKU',
+                  action: () => {
+                    const selected = gridApi.getSelectedRows();
+                    if (selected.length > 0) handleDuplicate(selected[0]);
+                  },
+                  icon: '<span class="lucide lucide-copy"></span>'
+                }
+              ]}
+              gridOptions={{
+                suppressCellFocus: false,
+                ensureDomOrder: true,
+              }}
+            />
+          </div>
+        )}
 
-      {/* Pagination Footer - Visible on both Desktop and Mobile */}
-      <div className="mt-4 bg-[var(--color-card)] rounded-xl border border-[var(--color-border)] shadow-sm px-4 sm:px-5 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3 text-xs text-[var(--color-muted-foreground)]">
+        {/* Floating Bulk Action Bar (Spreadsheet Feel) */}
+        {selectedSkus.size > 0 && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="bg-[var(--color-card)]/90 backdrop-blur-xl border border-[var(--color-primary)]/20 shadow-2xl rounded-2xl px-6 py-3 flex items-center gap-6">
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase font-bold text-[var(--color-primary)] tracking-wider">Bulk Actions</span>
+                <span className="text-xs font-medium text-[var(--color-foreground)]">{selectedSkus.size} SKUs selected</span>
+              </div>
+              <div className="w-[1px] h-8 bg-[var(--color-border)]" />
+              <div className="flex gap-2">
+                <Button 
+                   variant="ghost" 
+                   size="sm" 
+                   className="h-9 gap-2 text-violet-600 hover:bg-violet-500/10 font-bold"
+                   onClick={() => {
+                      const selected = gridApi.getSelectedRows();
+                      selected.forEach(s => handleDuplicate(s));
+                   }}
+                >
+                  <Copy size={14} /> Duplicate ({selectedSkus.size}x)
+                </Button>
+                <Button 
+                   variant="ghost" 
+                   size="sm" 
+                   className="h-9 gap-2 text-red-600 hover:bg-red-500/10 font-bold"
+                   onClick={handleBulkDelete}
+                >
+                  <Trash2 size={14} /> Delete Selection
+                </Button>
+              </div>
+              <button 
+                onClick={() => { gridApi.deselectAll(); setSelectedSkus(new Set()); }}
+                className="p-1.5 hover:bg-[var(--color-muted)] rounded-full transition-colors"
+              >
+                <X size={16} className="text-[var(--color-muted-foreground)]" />
+              </button>
+            </div>
+          </div>
+        )}
+        )}
+      </div>
+
+      {/* Pagination View Controls (Bottom Bar) */}
+      <div className="flex items-center justify-between bg-[var(--color-card)] p-3 rounded-xl border border-[var(--color-border)] shadow-sm">
+        <div className="flex gap-4 items-center overflow-x-auto no-scrollbar py-1">
           <span>Showing {Math.min((page-1)*pageSize+1,filtered.length)}–{Math.min(page*pageSize,filtered.length)} of {filtered.length}</span>
           <select
             value={pageSize}
