@@ -709,54 +709,102 @@ const renderCell = (col, sku, openFullEdit) => {
         </div>
       );
     }
-    case 'brand_reference_id': return (
-      <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-[var(--color-muted)]/20 border border-[var(--color-border)]/50 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-card)] transition-all">
-        <span className="text-[13px] font-bold text-[var(--color-foreground)] truncate">{references.BRAND[val] || <EmptyState isLine />}</span>
-        <ChevronDown size={14} className="text-[var(--color-muted-foreground)] opacity-70 group-hover/ref:text-[var(--color-primary)] transition-colors flex-shrink-0" />
-      </div>
-    );
-    case 'category_reference_id': return (
-      <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-[var(--color-muted)]/10 border border-[var(--color-border)]/40 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-card)] transition-all">
-        <span className="text-[13px] text-[var(--color-foreground)] truncate">{references.CATEGORY[val] || <EmptyState isLine />}</span>
-        <ChevronDown size={14} className="text-[var(--color-muted-foreground)] opacity-60 group-hover/ref:text-[var(--color-primary)] transition-colors flex-shrink-0" />
-      </div>
-    );
-    case 'sub_category_reference_id': return (
-      <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-[var(--color-muted)]/10 border border-[var(--color-border)]/40 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-card)] transition-all">
-        <span className="text-[13px] text-[var(--color-muted-foreground)] truncate">{references.SUB_CATEGORY[val] || <EmptyState isLine />}</span>
-        <ChevronDown size={14} className="text-[var(--color-muted-foreground)] opacity-60 group-hover/ref:text-[var(--color-primary)] transition-colors flex-shrink-0" />
-      </div>
-    );
-    case 'bundle_type':               return (
-      <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-amber-50/20 border border-amber-200/50 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-amber-400/50 hover:bg-white transition-all">
-        <span className="text-[13px] font-medium text-amber-900 truncate">{references.BUNDLE_TYPE[val] || val || <EmptyState isLine />}</span>
-        <ChevronDown size={14} className="text-amber-500/60 group-hover/ref:text-amber-600 transition-colors flex-shrink-0" />
-      </div>
-    );
-    case 'pack_type':                 return (
-      <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-amber-50/10 border border-amber-200/30 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-amber-400/50 hover:bg-white transition-all">
-        <span className="text-[13px] text-amber-800/80 truncate">{references.PACK_TYPE[val] || val || <EmptyState isLine />}</span>
-        <ChevronDown size={14} className="text-amber-500/50 group-hover/ref:text-amber-600 transition-colors flex-shrink-0" />
-      </div>
-    );
-    case 'net_quantity_unit_reference_id': return (
-      <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-emerald-50/20 border border-emerald-200/50 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-emerald-400/50 hover:bg-white transition-all">
-        <span className="text-[13px] font-medium text-emerald-900 truncate">{references.NET_QUANTITY_UNIT[val] || val || <EmptyState isLine />}</span>
-        <ChevronDown size={14} className="text-emerald-500/60 group-hover/ref:text-emerald-600 transition-colors flex-shrink-0" />
-      </div>
-    );
-    case 'size_reference_id': return (
-      <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-emerald-50/10 border border-emerald-200/30 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-emerald-400/50 hover:bg-white transition-all">
-        <span className="text-[13px] text-emerald-800/80 truncate">{references.SIZE[val] || val || <EmptyState isLine />}</span>
-        <ChevronDown size={14} className="text-emerald-500/50 group-hover/ref:text-emerald-600 transition-colors flex-shrink-0" />
-      </div>
-    );
-    case 'color': return (
-      <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-emerald-50/5 border border-emerald-200/20 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-emerald-400/50 hover:bg-white transition-all">
-        <span className="text-[13px] text-emerald-800/70 truncate">{references.COLOR[val] || val || <EmptyState isLine />}</span>
-        <ChevronDown size={14} className="text-emerald-500/40 group-hover/ref:text-emerald-600 transition-colors flex-shrink-0" />
-      </div>
-    );
+    case 'brand_reference_id': {
+      const label = references.BRAND[val];
+      return (
+        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-[var(--color-muted)]/20 border border-[var(--color-border)]/50 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-card)] transition-all">
+          <span className={cn("text-[13px] font-bold truncate flex items-center gap-1.5", label ? "text-[var(--color-foreground)]" : "text-amber-600 italic font-medium")}>
+            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
+            {label || val || <EmptyState isLine />}
+          </span>
+          <ChevronDown size={14} className="text-[var(--color-muted-foreground)] opacity-70 group-hover/ref:text-[var(--color-primary)] transition-colors flex-shrink-0" />
+        </div>
+      );
+    }
+    case 'category_reference_id': {
+      const label = references.CATEGORY[val];
+      return (
+        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-[var(--color-muted)]/10 border border-[var(--color-border)]/40 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-card)] transition-all">
+          <span className={cn("text-[13px] truncate flex items-center gap-1.5", label ? "text-[var(--color-foreground)]" : "text-amber-600 italic font-medium")}>
+            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
+            {label || <EmptyState isLine />}
+          </span>
+          <ChevronDown size={14} className="text-[var(--color-muted-foreground)] opacity-60 group-hover/ref:text-[var(--color-primary)] transition-colors flex-shrink-0" />
+        </div>
+      );
+    }
+    case 'sub_category_reference_id': {
+      const label = references.SUB_CATEGORY[val];
+      return (
+        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-[var(--color-muted)]/10 border border-[var(--color-border)]/40 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-card)] transition-all">
+          <span className={cn("text-[13px] truncate flex items-center gap-1.5", label ? "text-[var(--color-muted-foreground)]" : "text-amber-600 italic font-medium")}>
+            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
+            {label || <EmptyState isLine />}
+          </span>
+          <ChevronDown size={14} className="text-[var(--color-muted-foreground)] opacity-60 group-hover/ref:text-[var(--color-primary)] transition-colors flex-shrink-0" />
+        </div>
+      );
+    }
+    case 'bundle_type': {
+      const label = references.BUNDLE_TYPE[val];
+      return (
+        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-amber-50/20 border border-amber-200/50 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-amber-400/50 hover:bg-white transition-all">
+          <span className={cn("text-[13px] font-medium truncate flex items-center gap-1.5", label ? "text-amber-900" : "text-amber-600 italic")}>
+            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
+            {label || val || <EmptyState isLine />}
+          </span>
+          <ChevronDown size={14} className="text-amber-500/60 group-hover/ref:text-amber-600 transition-colors flex-shrink-0" />
+        </div>
+      );
+    }
+    case 'pack_type': {
+      const label = references.PACK_TYPE[val];
+      return (
+        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-amber-50/10 border border-amber-200/30 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-amber-400/50 hover:bg-white transition-all">
+          <span className={cn("text-[13px] truncate flex items-center gap-1.5", label ? "text-amber-800/80" : "text-amber-600 italic font-medium")}>
+            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
+            {label || val || <EmptyState isLine />}
+          </span>
+          <ChevronDown size={14} className="text-amber-500/50 group-hover/ref:text-amber-600 transition-colors flex-shrink-0" />
+        </div>
+      );
+    }
+    case 'net_quantity_unit_reference_id': {
+      const label = references.NET_QUANTITY_UNIT[val];
+      return (
+        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-emerald-50/20 border border-emerald-200/50 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-emerald-400/50 hover:bg-white transition-all">
+          <span className={cn("text-[13px] font-medium truncate flex items-center gap-1.5", label ? "text-emerald-900" : "text-amber-600 italic")}>
+            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
+            {label || val || <EmptyState isLine />}
+          </span>
+          <ChevronDown size={14} className="text-emerald-500/60 group-hover/ref:text-emerald-600 transition-colors flex-shrink-0" />
+        </div>
+      );
+    }
+    case 'size_reference_id': {
+      const label = references.SIZE[val];
+      return (
+        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-emerald-50/10 border border-emerald-200/30 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-emerald-400/50 hover:bg-white transition-all">
+          <span className={cn("text-[13px] truncate flex items-center gap-1.5", label ? "text-emerald-800/80" : "text-amber-600 italic font-medium")}>
+            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
+            {label || val || <EmptyState isLine />}
+          </span>
+          <ChevronDown size={14} className="text-emerald-500/50 group-hover/ref:text-emerald-600 transition-colors flex-shrink-0" />
+        </div>
+      );
+    }
+    case 'color': {
+      const label = references.COLOR[val];
+      return (
+        <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-emerald-50/5 border border-emerald-200/20 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-emerald-400/50 hover:bg-white transition-all">
+          <span className={cn("text-[13px] truncate flex items-center gap-1.5", label ? "text-emerald-800/70" : "text-amber-600 italic font-medium")}>
+            {!label && val && <AlertCircle size={10} className="text-amber-500" />}
+            {label || val || <EmptyState isLine />}
+          </span>
+          <ChevronDown size={14} className="text-emerald-500/40 group-hover/ref:text-emerald-600 transition-colors flex-shrink-0" />
+        </div>
+      );
+    }
     case 'finished_product_weight': {
       const pWeight = parseFloat(sku.package_weight) || 0;
       const rWeight = parseFloat(sku.raw_product_weight) || 0;
@@ -1118,7 +1166,7 @@ const renderCell = (col, sku, openFullEdit) => {
 
 
                   {/* Content for Sticky Notes in Sub-column Row */}
-                  <th className="sticky top-0 right-0 z-30 p-3 bg-[var(--color-muted)] border-b-2 border-l border-[var(--color-border)] shadow-[inset_1px_0_0_var(--color-border)]">
+                  <th className="sticky top-0 right-0 z-40 p-3 bg-[var(--color-muted)] border-b-2 border-l border-[var(--color-border)] shadow-[inset_1px_0_0_var(--color-border)]">
                     <div className="flex items-center justify-center gap-1.5 opacity-60">
                       <StickyNote size={13} className="text-[var(--color-muted-foreground)]" />
                       <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-muted-foreground)]">Notes</span>
@@ -1194,10 +1242,10 @@ const renderCell = (col, sku, openFullEdit) => {
                               "transition-all relative group/cell outline-none animate-in fade-in duration-300",
                               "border-b border-[var(--color-border)] py-2.5 cursor-default align-middle",
                               (col.id === 'product_name' || col.id === 'barcode') ? "px-4" : "px-2",
-                              isActive && "z-20",
-                              isSelected && "cell-active z-30 outline-none animate-focus-pulse",
-                              col.sticky && "sticky z-40 bg-[var(--color-card)]",
-                               col.sticky && !col.isRight && "shadow-[inset_-1px_0_0_transparent] after:absolute after:inset-y-0 after:right-0 after:w-[1px] after:bg-[var(--color-border)]",
+                              isActive && "z-10",
+                              isSelected && "cell-active z-10 outline-none animate-focus-pulse",
+                              col.sticky && "sticky z-20 bg-[var(--color-card)]",
+                               col.sticky && !col.isRight && "shadow-[4px_0_12px_var(--color-shadow)] after:absolute after:inset-y-0 after:right-0 after:w-[1px] after:bg-[var(--color-border)]",
                               col.sticky && col.isRight && "right-0 shadow-[inset_1px_0_0_var(--color-border)]",
                               /* Ensure open popover is above everything */
                               isNoteActive && col.id === 'remark' && "z-[50] overflow-visible",

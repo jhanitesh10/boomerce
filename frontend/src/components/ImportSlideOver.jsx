@@ -296,9 +296,11 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
         if (backendRow.status_reference_id) { backendRow.status_label = backendRow.status_reference_id; delete backendRow.status_reference_id; }
         if (backendRow.bundle_type) { backendRow.bundle_type_label = backendRow.bundle_type; delete backendRow.bundle_type; }
         if (backendRow.pack_type) { backendRow.pack_type_label = backendRow.pack_type; delete backendRow.pack_type; }
+        if (backendRow.color) { backendRow.color_label = backendRow.color; delete backendRow.color; }
+        if (backendRow.net_quantity_unit_reference_id) { backendRow.net_quantity_unit_label = backendRow.net_quantity_unit_reference_id; delete backendRow.net_quantity_unit_reference_id; }
+        if (backendRow.size_reference_id) { backendRow.size_label = backendRow.size_reference_id; delete backendRow.size_reference_id; }
 
         const numericAndIdFields = [
-          'brand_reference_id', 'category_reference_id', 'sub_category_reference_id', 'status_reference_id', 'net_quantity_unit_reference_id', 'size_reference_id',
           'mrp', 'purchase_cost', 'package_weight', 'raw_product_weight',
           'net_quantity', 'tax_percent'
         ];

@@ -110,6 +110,7 @@ class SkuImportRow(SkuMasterBase):
     pack_type_label: Optional[str] = None
     net_quantity_unit_label: Optional[str] = None
     size_label: Optional[str] = None
+    color_label: Optional[str] = None
 
 class BulkImportRequest(BaseModel):
     skus: List[SkuImportRow]

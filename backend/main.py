@@ -438,7 +438,7 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
         unique_refs = {
             "BRAND": set(), "CATEGORY": set(), "SUB_CATEGORY": set(),
             "STATUS": set(), "BUNDLE_TYPE": set(), "PACK_TYPE": set(),
-            "NET_QUANTITY_UNIT": set(), "SIZE": set()
+            "NET_QUANTITY_UNIT": set(), "SIZE": set(), "COLOR": set()
         }
         
         for s in data.skus:
@@ -450,6 +450,7 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
             if s.pack_type_label: unique_refs["PACK_TYPE"].add(safe_label(s.pack_type_label))
             if s.net_quantity_unit_label: unique_refs["NET_QUANTITY_UNIT"].add(safe_label(s.net_quantity_unit_label))
             if s.size_label: unique_refs["SIZE"].add(safe_label(s.size_label))
+            if s.color_label: unique_refs["COLOR"].add(safe_label(s.color_label))
 
         # 2. Batch resolve existing references
         ref_map = {} # (type, label_lower) -> id
@@ -519,9 +520,10 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
                     
                     if s_data.net_quantity_unit_label: payload["net_quantity_unit_reference_id"] = ref_map.get(("NET_QUANTITY_UNIT", safe_label(s_data.net_quantity_unit_label).lower()))
                     if s_data.size_label: payload["size_reference_id"] = ref_map.get(("SIZE", safe_label(s_data.size_label).lower()))
+                    if s_data.color_label: payload["color"] = ref_map.get(("COLOR", safe_label(s_data.color_label).lower()))
 
                     # Remove local label fields
-                    for k in ["brand_label", "category_label", "sub_category_label", "status_label", "bundle_type_label", "pack_type_label", "net_quantity_unit_label", "size_label"]:
+                    for k in ["brand_label", "category_label", "sub_category_label", "status_label", "bundle_type_label", "pack_type_label", "net_quantity_unit_label", "size_label", "color_label"]:
                         if k in payload: del payload[k]
 
                     # CRITICAL: Sanitize empty strings to None to prevent DB syntax errors
