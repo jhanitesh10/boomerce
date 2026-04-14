@@ -33,8 +33,8 @@ const BASE_COLS = [
   { id: 'actions',            label: '',         width: 82,  align: 'center', noInline: true, sticky: true, stickyLeft: 0 },
   { id: 'primary_image_url',  label: 'Image',    width: 76,  align: 'center', noInline: true, sticky: true, stickyLeft: 82 },
   { id: 'product_name',       label: 'Product',  width: 260, sortable: true,  sticky: true, stickyLeft: 158 },
-  { id: 'barcode',            label: 'SKU / EAN / Barcode ID',  width: 160, isMono: true,    sticky: true, stickyLeft: 418 },
-  { id: 'brand_reference_id', label: 'Brand',    width: 140, sortable: true,  sticky: true, stickyLeft: 578 },
+  { id: 'barcode',            label: 'SKU / EAN / Barcode ID',  width: 140, isMono: true,    sticky: true, stickyLeft: 418 },
+  { id: 'brand_reference_id', label: 'Brand',    width: 120, sortable: true,  sticky: true, stickyLeft: 558 },
 ];
 
 const REMARKS_COL = { id: 'remark', label: 'Notes', width: 62, align: 'center', sticky: true, isRight: true };
@@ -53,17 +53,17 @@ const GROUPS = [
   {
     id: 'pricing_specs', label: 'Pricing & Specs', color: 'emerald',
     cols: [
-      { id: 'mrp',            label: 'MRP (₹)',  width: 100, align: 'right', sortable: true, isNum: true },
-      { id: 'purchase_cost',  label: 'Cost (₹)', width: 100, align: 'right', isNum: true },
-      { id: 'net_quantity',          label: 'Net Qty',  width: 120, align: 'right' },
+      { id: 'mrp',            label: 'MRP (₹)',  width: 85, align: 'right', sortable: true, isNum: true },
+      { id: 'purchase_cost',  label: 'Cost (₹)', width: 85, align: 'right', isNum: true },
+      { id: 'net_quantity',          label: 'Net Qty',  width: 90, align: 'right' },
       { id: 'net_quantity_unit_reference_id', label: 'Unit',  width: 100 },
-      { id: 'size_reference_id',     label: 'Size Spec',    width: 140 },
-      { id: 'color',                 label: 'Color',        width: 110 },
-      { id: 'raw_product_size',      label: 'Raw Size',     width: 110 },
-      { id: 'package_size',          label: 'Pack Size',    width: 110 },
-      { id: 'package_weight',        label: 'Pack Wt (g)',  width: 105, align: 'right' },
-      { id: 'raw_product_weight',    label: 'Raw Wt (g)',   width: 105, align: 'right' },
-      { id: 'finished_product_weight', label: 'Fin Wt (g)', width: 105, align: 'right', noInline: true },
+      { id: 'size_reference_id',     label: 'Size Spec',    width: 110 },
+      { id: 'color',                 label: 'Color',        width: 100 },
+      { id: 'raw_product_size',      label: 'Raw Size',     width: 100 },
+      { id: 'package_size',          label: 'Pack Size',    width: 100 },
+      { id: 'package_weight',        label: 'Pack Wt (g)',  width: 95, align: 'right' },
+      { id: 'raw_product_weight',    label: 'Raw Wt (g)',   width: 95, align: 'right' },
+      { id: 'finished_product_weight', label: 'Fin Wt (g)', width: 95, align: 'right', noInline: true },
     ],
   },
   {
@@ -77,8 +77,8 @@ const GROUPS = [
   {
      id: 'tax', label: 'Tax & Compliance', color: 'blue',
      cols: [
-       { id: 'tax_percent',    label: 'Tax %',    width: 82,  align: 'right' },
-       { id: 'tax_rule_code',  label: 'Tax Rule (HSN)', width: 110, isMono: true },
+      { id: 'tax_percent',    label: 'Tax %',    width: 65,  align: 'right' },
+      { id: 'tax_rule_code',  label: 'Tax Rule (HSN)', width: 105, isMono: true },
      ]
   },
   {
@@ -1077,7 +1077,7 @@ const renderCell = (col, sku, openFullEdit) => {
                 <tr>
                   {BASE_COLS.map((col) => (
                     <th key={col.id}
-                      className={cn("px-4 py-2.5 text-left whitespace-nowrap select-none border-b-2 border-[var(--color-border)] bg-[var(--color-muted)]",
+                      className={cn("px-4 py-2.5 text-left whitespace-nowrap select-none border-b-2 border-l border-[var(--color-border)]/30 bg-[var(--color-muted)]",
                         col.sticky && "sticky z-20 shadow-[inset_-1px_0_0_var(--color-border)]")}
                        style={{width:col.width, minWidth:col.width, textAlign:col.align||'left', left:col.sticky? col.stickyLeft :undefined}}>
                       <span onClick={()=>col.sortable&&handleSort(col.id)} className={cn("text-[10.5px] font-semibold tracking-wider uppercase text-[var(--color-muted-foreground)]/80", col.sortable&&"cursor-pointer hover:text-[var(--color-primary)] transition-colors")}>
@@ -1094,8 +1094,8 @@ const renderCell = (col, sku, openFullEdit) => {
                     const gc        = GC[g.color];
                     return shownCols.map((col, idx) => (
                       <th key={col.id}
-                        className={cn("px-4 py-2.5 text-left whitespace-nowrap select-none border-b-2 border-[var(--color-border)]",
-                          idx===0 && "border-l border-[var(--color-border)]", gc.row2)}
+                        className={cn("px-4 py-2.5 text-left whitespace-nowrap select-none border-b-2 border-[var(--color-border)] border-l",
+                           gc.row2)}
                         style={{width:col.width, minWidth:col.width, textAlign:col.align||'left'}}>
                         <span onClick={()=>col.sortable&&handleSort(col.id)} className={cn("text-[10.5px] font-semibold tracking-wider uppercase text-[var(--color-muted-foreground)]/80", col.sortable&&"cursor-pointer hover:text-[var(--color-primary)] transition-colors")}>
                           {col.label}
@@ -1183,7 +1183,7 @@ const renderCell = (col, sku, openFullEdit) => {
                             className={cn(
                               "transition-all relative group/cell outline-none animate-in fade-in duration-300",
                               "border-b border-[var(--color-border)] py-2.5 cursor-default align-middle",
-                              (col.id === 'actions' || col.id === 'primary_image_url') ? "px-2" : "px-4",
+                              (col.id === 'product_name' || col.id === 'barcode') ? "px-4" : "px-2",
                               isActive && "z-20",
                               isSelected && "cell-active z-30 outline-none animate-focus-pulse",
                               col.sticky && "sticky z-40 bg-[var(--color-card)]",
@@ -1194,6 +1194,7 @@ const renderCell = (col, sku, openFullEdit) => {
                               /* Ensure base columns have a right border when scrolling */
                               col.sticky && !col.isRight && (col.id === 'brand_reference_id' ? "!shadow-[inset_-1px_0_0_var(--color-border)]" : ""),
                               gc && !isActive && !isSelected && gc.td,
+                              "border-l border-[var(--color-border)]/30",
                               isFirstGroupCol && "border-l border-[var(--color-border)]",
                             )}
                             style={{
