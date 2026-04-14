@@ -396,8 +396,14 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
       'brand_reference_id', 'category_reference_id', 'sub_category_reference_id',
       'status_reference_id', 'net_quantity_unit_reference_id', 'size_reference_id'
     ].forEach(k => {
-      // Convert empty strings to null so Pydantic validation passes
-      payload[k] = payload[k] === '' ? null : (['mrp', 'purchase_cost', 'package_weight', 'raw_product_weight', 'net_quantity', 'tax_percent'].includes(k) ? Number(payload[k]) || null : Number(payload[k]) || payload[k]);
+      const raw = payload[k];
+      if (raw === "" || raw === undefined || raw === null) {
+        payload[k] = null;
+      } else {
+        const isNumeric = ['mrp', 'purchase_cost', 'package_weight', 'raw_product_weight', 'net_quantity', 'tax_percent'].includes(k);
+        const num = Number(raw);
+        payload[k] = isNumeric ? (isNaN(num) ? null : num) : (isNaN(num) ? raw : num);
+      }
     });
     // Remove derived/legacy fields from payload
     delete payload.finished_product_weight;

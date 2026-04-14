@@ -237,7 +237,7 @@ export default function SalesImportSlideOver({ onClose, onSuccess }) {
              // Sanitize numeric fields: convert empty to null, otherwise parse as number
              const numericFields = ['quantity', 'unit_selling_price', 'total_amount', 'tax_amount', 'platform_fee'];
              if (numericFields.includes(sysK)) {
-                if (val === "" || val === undefined) val = null;
+                if (val === "" || val === undefined || val === null) val = null;
                 else {
                   const num = Number(val);
                   val = isNaN(num) ? null : num;

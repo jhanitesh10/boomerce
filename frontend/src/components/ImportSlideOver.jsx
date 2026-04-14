@@ -331,10 +331,11 @@ export default function ImportSlideOver({ onClose, skus = [], refLists = {}, onI
           'status_reference_id', 'net_quantity_unit_reference_id', 'size_reference_id'
         ];
         numericAndIdFields.forEach(k => {
-          if (backendRow[k] === "" || backendRow[k] === undefined) {
+          const raw = backendRow[k];
+          if (raw === "" || raw === undefined || raw === null) {
             backendRow[k] = null;
           } else {
-            const num = Number(backendRow[k]);
+            const num = Number(raw);
             backendRow[k] = isNaN(num) ? null : num;
           }
         });
