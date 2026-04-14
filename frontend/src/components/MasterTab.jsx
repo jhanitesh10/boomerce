@@ -458,7 +458,12 @@ export default function MasterTab({ isMobile }) {
       ]);
       let subcats = [];
       try { subcats = await refApi.getAll('SUB_CATEGORY'); } catch { /* ignore */ }
-      const toMap = arr => (arr || []).reduce((a, r) => ({ ...a, [r.id]: r.label }), {});
+      const toMap = arr => (arr || []).reduce((a, r) => ({ 
+        ...a, 
+        [r.id]: r.label,
+        [r.key]: r.label,
+        [String(r.id)]: r.label 
+      }), {});
       setSkus(skuData || []);
       setReferences({
         BRAND: toMap(brands),
@@ -800,8 +805,9 @@ const renderCell = (col, sku, openFullEdit) => {
       );
     }
     case 'color': {
-      // Handle both ID (from resolve) and label (from DB)
-      const label = typeof val === 'number' ? references.COLOR[val] : val;
+      // Priority 1: Direct lookup in COLOR references (handles IDs, Numeric Strings, and Keys)
+      // Priority 2: Fallback to the raw value
+      const label = references.COLOR[val] || val;
       return (
         <div className="flex items-center justify-between gap-2 w-full group/ref cursor-pointer bg-emerald-50/5 border border-emerald-200/20 rounded-lg px-2.5 py-1.5 shadow-sm hover:border-emerald-400/50 hover:bg-white transition-all">
           <span className={cn("text-[13px] truncate flex items-center gap-1.5", label ? "text-emerald-800/70" : "text-amber-600 italic font-medium")}>
