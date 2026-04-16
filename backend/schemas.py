@@ -119,6 +119,7 @@ class BulkImportRequest(BaseModel):
 class SalesOrderBase(BaseModel):
     tenant_id: Optional[str] = None
     platform_reference_id: Optional[int] = None
+    channel_reference_id: Optional[int] = None
     sku_master_id: Optional[int] = None
 
     external_order_id: Optional[str] = None
@@ -162,6 +163,7 @@ class SalesOrder(SalesOrderBase):
 
 class SalesImportRow(SalesOrderBase):
     platform_label: Optional[str] = None
+    channel_label: Optional[str] = None
     sku_code: Optional[str] = None
     barcode: Optional[str] = None
 

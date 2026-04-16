@@ -87,6 +87,7 @@ class SalesOrder(Base):
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(String(100), index=True, nullable=True)
     platform_reference_id = Column(Integer, ForeignKey('reference_data.id'), nullable=True)
+    channel_reference_id = Column(Integer, ForeignKey('reference_data.id'), nullable=True)
     sku_master_id = Column(Integer, ForeignKey('sku_master.id'), nullable=True)
     order_type = Column(String(50), default='ORDER', index=True) # ORDER, RETURN
     
@@ -121,4 +122,5 @@ class SalesOrder(Base):
 
     # Relationships
     platform = relationship("ReferenceData", foreign_keys=[platform_reference_id])
+    channel = relationship("ReferenceData", foreign_keys=[channel_reference_id])
     sku_master = relationship("SkuMaster", foreign_keys=[sku_master_id])
