@@ -22,7 +22,18 @@ export const skuApi = {
   trashCatalogFolder: (id) => api.post(`/skus/${id}/trash-catalog-folder`).then(res => res.data),
   exportImages: (data) => api.post('/skus/export-images', data, { responseType: 'blob' }).then(res => res.data),
   bulkImport: (data) => api.post('/skus/bulk-import', data).then(res => res.data),
+  search: (q) => api.get('/skus-search', { params: { q } }).then(res => res.data),
+  linkComponent: (id, targetId, type) => {
+    const params = { component_type: type };
+    if (targetId) params.target_sku_id = targetId;
+    return api.post(`/skus/${id}/link-component`, null, { params }).then(res => res.data);
+  },
+  unlinkComponent: (id, type) => api.delete(`/skus/${id}/link-component/${type}`).then(res => res.data),
+  getPoolInfo: (id) => api.get(`/skus/${id}/pool-info`).then(res => res.data),
+  getPoolDiscovery: (id, type) => api.get(`/skus/${id}/pool-discovery${type ? `?comp_type=${type}` : ''}`).then(res => res.data),
 };
+
+
 
 export const refApi = {
   getAll: (type) => api.get(`/references${type ? `?ref_type=${type}` : ''}`).then(res => res.data),

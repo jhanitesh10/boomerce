@@ -1,9 +1,10 @@
 import os
 import uuid
-from fastapi import FastAPI, Depends, HTTPException, File, UploadFile
+import json
+from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import func, String, cast
 from sqlalchemy.orm import Session
 import zipfile
 import io
@@ -11,7 +12,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 import datetime
-from typing import List
+from typing import List, Optional
 import re
 
 import models
@@ -286,7 +287,7 @@ except Exception as e:
     print(f"Skipping local storage setup: {e}")
 
 # CORS Configuration
-# We explicitly list the frontend origin to support allow_credentials=True, 
+# We explicitly list the frontend origin to support allow_credentials=True,
 # which is often required for secure browser contexts and cross-origin persistence.
 env_origins = os.getenv("ALLOWED_ORIGINS", "")
 origins = [o.strip() for o in env_origins.split(",") if o.strip()] or [
@@ -333,7 +334,7 @@ def create_reference(data: schemas.ReferenceDataCreate, db: Session = Depends(ge
     # 1. Normalize label and type
     label = data.label.strip() if data.label else ""
     ref_type = data.reference_data_type.strip().upper()
-    
+
     # 2. Case-insensitive duplicate check
     from sqlalchemy import func
     existing = db.query(models.ReferenceData).filter(
@@ -341,10 +342,10 @@ def create_reference(data: schemas.ReferenceDataCreate, db: Session = Depends(ge
         models.ReferenceData.reference_data_type == ref_type,
         models.ReferenceData.deleted_at == None
     ).first()
-    
+
     if existing:
         return existing
-        
+
     # 3. Key Generation & Model Construction
     payload = data.model_dump()
     if not payload.get("key"):
@@ -352,7 +353,7 @@ def create_reference(data: schemas.ReferenceDataCreate, db: Session = Depends(ge
         slug = re.sub(r'[^a-z0-9]+', '_', label.lower()).strip('_')
         unique_suffix = uuid.uuid4().hex[:6]
         payload["key"] = f"{ref_type.lower()}_{slug}_{unique_suffix}"
-    
+
     db_item = models.ReferenceData(**payload)
     db.add(db_item)
     db.commit()
@@ -386,6 +387,14 @@ def delete_reference(id: int, db: Session = Depends(get_db)):
 def get_skus(db: Session = Depends(get_db)):
     return db.query(models.SkuMaster).filter(models.SkuMaster.deletedAt == None).all()
 
+@app.get("/api/skus-search")
+def search_skus(q: str = "", db: Session = Depends(get_db)):
+    """Search for SKUs by code or name for linking purposes."""
+    return db.query(models.SkuMaster).filter(
+        (models.SkuMaster.sku_code.ilike(f"%{q}%")) |
+        (models.SkuMaster.product_name.ilike(f"%{q}%"))
+    ).filter(models.SkuMaster.deletedAt == None).limit(20).all()
+
 @app.get("/api/skus/{id}", response_model=schemas.SkuMaster)
 def get_sku(id: int, db: Session = Depends(get_db)):
     sku = db.query(models.SkuMaster).filter(models.SkuMaster.id == id, models.SkuMaster.deletedAt == None).first()
@@ -418,11 +427,262 @@ def delete_sku(id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted securely"}
 
+
+def _get_ref_label(db: Session, ref_id: Optional[int]) -> str:
+    if not ref_id: return "unknown"
+    ref = db.query(models.ReferenceData).filter(models.ReferenceData.id == ref_id).first()
+    if not ref: return "unknown"
+    # Create a slug from the label
+    return re.sub(r'[^a-zA-Z0-9]+', '_', ref.label.lower()).strip('_')
+
+def parse_codes(c):
+    """Normalizes both old (dict) and new (list) group code formats to a list of {type, id}."""
+    if not c: return []
+    if isinstance(c, list): return c
+    if isinstance(c, dict):
+        return [{"type": k, "id": v} for k, v in c.items() if v]
+    if isinstance(c, str):
+        # Check for JSON first
+        try:
+            parsed = json.loads(c)
+            if isinstance(parsed, list): return parsed
+            if isinstance(parsed, dict):
+                return [{"type": k, "id": v} for k, v in parsed.items() if v]
+        except:
+            pass
+
+        # Handle pipe-separated legacy format (e.g. ID_PKG|ID_RAW)
+        if '|' in c:
+            parts = c.split('|')
+            results = []
+            for p in parts:
+                p = p.strip()
+                t = 'unknown'
+                p_up = p.upper()
+                if '_RAW' in p_up: t = 'raw'
+                elif '_PKG' in p_up: t = 'package'
+                elif '_LBL' in p_up: t = 'label'
+                elif '_STK' in p_up: t = 'sticker'
+                elif '_MC' in p_up: t = 'monocarton'
+                results.append({'type': t, 'id': p})
+            return results
+    return []
+
+def get_code(codes, t):
+    """Helper to find a specific component ID within the array structure."""
+    for entry in codes:
+        if entry.get("type") == t:
+            return entry.get("id")
+    return None
+
+def set_code(codes, t, pool_id):
+    """Adds or updates a component ID within the array structure."""
+    new_codes = [c for c in codes if c.get("type") != t]
+    new_codes.append({"type": t, "id": pool_id})
+    return new_codes
+
+def _perform_component_link(db: Session, source_sku: models.SkuMaster, target_sku: models.SkuMaster, component_type: str):
+    """Internal helper to link a specific component type between two SKUs."""
+
+    t_codes = parse_codes(target_sku.product_component_group_code)
+    s_codes = parse_codes(source_sku.product_component_group_code)
+
+    existing_code = get_code(t_codes, component_type) or get_code(s_codes, component_type)
+
+    if not existing_code:
+        u_id = uuid.uuid4().hex[:8]
+        subcat = _get_ref_label(db, target_sku.sub_category_reference_id)
+        size = _get_ref_label(db, target_sku.size_reference_id)
+        color = re.sub(r'[^a-zA-Z0-9]+', '_', (target_sku.color or "none").lower()).strip('_')
+        pkg_size = re.sub(r'[^a-zA-Z0-9]+', '_', (target_sku.package_size or "none").lower()).strip('_')
+
+        if component_type == 'raw':
+            existing_code = f"{u_id}_{color}_{subcat}_{size}_raw"
+        elif component_type == 'package':
+            existing_code = f"{u_id}_{pkg_size}_{subcat}_package"
+        elif component_type == 'label':
+            existing_code = f"{u_id}_{subcat}_label"
+        elif component_type == 'sticker':
+            existing_code = f"{u_id}_sticker"
+        else: # monocarton or others
+            existing_code = f"{u_id}_{subcat}_{component_type}"
+
+    new_s_codes = set_code(s_codes, component_type, existing_code)
+    new_t_codes = set_code(t_codes, component_type, existing_code)
+
+    source_sku.product_component_group_code = new_s_codes
+    target_sku.product_component_group_code = new_t_codes
+
+    flag_modified(source_sku, "product_component_group_code")
+    flag_modified(target_sku, "product_component_group_code")
+
+    return existing_code
+
+@app.post("/api/skus/{id}/link-component")
+def link_component(id: int, component_type: str, target_sku_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Links this SKU to another SKU's component pool, or creates a new one."""
+    source_sku = db.query(models.SkuMaster).filter(models.SkuMaster.id == id).first()
+    if not source_sku: raise HTTPException(404, "Source SKU not found")
+
+    target_sku = source_sku
+    if target_sku_id:
+        target_sku = db.query(models.SkuMaster).filter(models.SkuMaster.id == target_sku_id).first()
+        if not target_sku: raise HTTPException(404, "Target SKU not found")
+
+    code = _perform_component_link(db, source_sku, target_sku, component_type)
+    db.commit()
+    return {"status": "success", "code": code}
+
+
+@app.get("/api/skus/{id}/pool-info")
+def get_pool_info(id: int, db: Session = Depends(get_db)):
+    """Returns a flat list of all SKUs sharing ANY component pool with this one."""
+    sku = db.query(models.SkuMaster).filter(models.SkuMaster.id == id).first()
+    if not sku: raise HTTPException(404, "SKU not found")
+
+    codes = parse_codes(sku.product_component_group_code)
+    pool_ids = [entry.get("id") for entry in codes if entry.get("id")]
+
+    if not pool_ids:
+        return []
+
+    # Build a combined query using OR for all pool IDs
+    from sqlalchemy import or_
+    filters = [cast(models.SkuMaster.product_component_group_code, String).like(f'%"{p_id}"%') for p_id in pool_ids]
+
+    peers = db.query(
+        models.SkuMaster.id,
+        models.SkuMaster.product_name,
+        models.SkuMaster.sku_code,
+        models.SkuMaster.product_component_group_code,
+        models.SkuMaster.catalog_url
+    ).filter(
+        models.SkuMaster.id != id,
+        models.SkuMaster.deletedAt == None,
+        or_(*filters)
+    ).all()
+
+    return [
+        {
+            "id": p.id,
+            "product_name": p.product_name,
+            "sku_code": p.sku_code,
+            "product_component_group_code": parse_codes(p.product_component_group_code),
+            "catalog_url": getattr(p, 'catalog_url', None)
+        }
+        for p in peers
+    ]
+
+@app.delete("/api/skus/{id}/link-component/{type}")
+def unlink_component(id: int, type: str, db: Session = Depends(get_db)):
+    """Removes a component from its pool, making it a unique asset again."""
+    sku = db.query(models.SkuMaster).filter(models.SkuMaster.id == id).first()
+    if not sku: raise HTTPException(404, "SKU not found")
+
+    codes = parse_codes(sku.product_component_group_code)
+    new_codes = [c for c in codes if c.get("type") != type]
+
+    sku.product_component_group_code = new_codes
+    flag_modified(sku, "product_component_group_code")
+    db.commit()
+    return {"status": "success"}
+
+@app.get("/api/skus/{id}/pool-discovery")
+def get_pool_discovery(id: int, comp_type: Optional[str] = Query(None), db: Session = Depends(get_db)):
+    """Automatically finds existing pools that match this SKU's attributes."""
+    sku = db.query(models.SkuMaster).filter(models.SkuMaster.id == id).first()
+    if not sku: raise HTTPException(404, "SKU not found")
+
+
+    current_codes = parse_codes(sku.product_component_group_code)
+
+    discovery = {}
+    scan_types = [comp_type] if comp_type else ['raw', 'package', 'label', 'monocarton', 'sticker']
+
+    for t in scan_types:
+        # Define match logic for each component
+        config = {
+            'raw': {'match': {'size_reference_id': sku.size_reference_id, 'color': sku.color, 'sub_category_reference_id': sku.sub_category_reference_id}},
+            'package': {'match': {'package_size': sku.package_size, 'sub_category_reference_id': sku.sub_category_reference_id}},
+            'label': {'match': {'sub_category_reference_id': sku.sub_category_reference_id, 'brand_reference_id': sku.brand_reference_id}},
+            'monocarton': {'match': {'sub_category_reference_id': sku.sub_category_reference_id}},
+            'sticker': {'match': {'sub_category_reference_id': sku.sub_category_reference_id}}
+        }.get(t)
+
+        if not config: continue
+
+        query = db.query(models.SkuMaster).filter(models.SkuMaster.id != id, models.SkuMaster.deletedAt == None)
+        # Apply attribute matching filters
+        for attr, val in config['match'].items():
+            if val is not None and val != "":
+                query = query.filter(getattr(models.SkuMaster, attr) == val)
+
+        matches = query.limit(20).all()
+
+        results = []
+        seen_pools = set()
+
+        current_pool_id = get_code(current_codes, t)
+
+        # Priority 1: Find existing pools
+        for m in matches:
+            m_codes = parse_codes(m.product_component_group_code)
+            p_id = get_code(m_codes, t)
+
+            if p_id and p_id not in seen_pools:
+                is_connected = (p_id == current_pool_id) if current_pool_id else False
+
+                # Find other products that share this EXACT pool_id for this EXACT type
+                pool_members = []
+                sibling_candidates = db.query(models.SkuMaster.id, models.SkuMaster.sku_code, models.SkuMaster.product_component_group_code).filter(
+                    models.SkuMaster.id != id,
+                    models.SkuMaster.deletedAt == None,
+                    cast(models.SkuMaster.product_component_group_code, String).like(f'%"{p_id}"%')
+                ).limit(10).all()
+
+                for cand in sibling_candidates:
+                    if cand.id == m.id: continue
+                    if parse_codes(cand.product_component_group_code).get(t) == p_id:
+                        pool_members.append({"id": cand.id, "sku_code": cand.sku_code})
+                        if len(pool_members) >= 4: break
+
+                results.append({
+                    "id": m.id,
+                    "product_name": m.product_name,
+                    "sku_code": m.sku_code,
+                    "pool_id": p_id,
+                    "is_existing_pool": True,
+                    "is_already_connected": is_connected,
+                    "pool_members": pool_members
+                })
+                seen_pools.add(p_id)
+                if len(results) >= 5: break
+
+        # Priority 2: Suggest individual products as potential pool starters
+        if len(results) < 5:
+            for m in matches:
+                if any(r['id'] == m.id for r in results): continue
+                m_codes = parse_codes(m.product_component_group_code)
+                if get_code(m_codes, t): continue # Already in a pool (likely handled in Priority 1)
+
+                results.append({
+                    "id": m.id,
+                    "product_name": m.product_name,
+                    "sku_code": m.sku_code,
+                    "pool_id": "NEW_POOL", # Placeholder for UI
+                    "is_existing_pool": False
+                })
+                if len(results) >= 5: break
+
+        discovery[comp_type] = results
+
+    return discovery
+
 @app.post("/api/skus/bulk-import")
 def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_db)):
     from sqlalchemy import func
     import logging
-    
+
     # Set up dedicated import logger
     logger = logging.getLogger("bulk_import")
     if not logger.handlers:
@@ -432,7 +692,7 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
         logger.setLevel(logging.INFO)
 
     logger.info(f"Bulk Import: Starting for {len(data.skus)} rows")
-    
+
     def safe_label(val):
         if val is None: return ""
         return str(val).strip()
@@ -444,7 +704,7 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
             "STATUS": set(), "BUNDLE_TYPE": set(), "PACK_TYPE": set(),
             "NET_QUANTITY_UNIT": set(), "SIZE": set(), "COLOR": set()
         }
-        
+
         for s in data.skus:
             if s.brand_label: unique_refs["BRAND"].add(safe_label(s.brand_label))
             if s.category_label: unique_refs["CATEGORY"].add(safe_label(s.category_label))
@@ -477,7 +737,7 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
                     slug = re.sub(r'[^a-z0-9]+', '_', clean_l.lower()).strip('_')
                     unique_suffix = uuid.uuid4().hex[:6]
                     new_key = f"{ref_type.lower()}_{slug}_{unique_suffix}"
-                    
+
                     try:
                         new_ref = models.ReferenceData(
                             reference_data_type=ref_type,
@@ -506,7 +766,7 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
             models.SkuMaster.sku_code.in_(incoming_sku_codes),
             models.SkuMaster.deletedAt == None
         ).all()
-        
+
         # sku_id_map maps sku_code -> model instance
         sku_id_map = {s.sku_code: s for s in existing_skus}
 
@@ -520,13 +780,13 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
                 failed_count += 1
                 errors.append({"sku_code": "UNKNOWN", "error": "Missing SKU Code"})
                 continue
-            
+
             try:
                 # Use a nested transaction (savepoint) for each SKU
                 with db.begin_nested():
                     # Prepare payload
                     payload = s_data.model_dump(exclude_unset=True)
-                    
+
                     # Resolve IDs from labels
                     def get_ref(rtype, rlabel):
                         res = ref_map.get((rtype, safe_label(rlabel).lower()))
@@ -536,10 +796,10 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
                     if s_data.category_label: payload["category_reference_id"] = get_ref("CATEGORY", s_data.category_label)["id"]
                     if s_data.sub_category_label: payload["sub_category_reference_id"] = get_ref("SUB_CATEGORY", s_data.sub_category_label)["id"]
                     if s_data.status_label: payload["status_reference_id"] = get_ref("STATUS", s_data.status_label)["id"]
-                    
+
                     if s_data.bundle_type_label: payload["bundle_type"] = get_ref("BUNDLE_TYPE", s_data.bundle_type_label)["label"]
                     if s_data.pack_type_label: payload["pack_type"] = get_ref("PACK_TYPE", s_data.pack_type_label)["label"]
-                    
+
                     if s_data.net_quantity_unit_label: payload["net_quantity_unit_reference_id"] = get_ref("NET_QUANTITY_UNIT", s_data.net_quantity_unit_label)["id"]
                     if s_data.size_label: payload["size_reference_id"] = get_ref("SIZE", s_data.size_label)["id"]
                     if s_data.color_label: payload["color"] = get_ref("COLOR", s_data.color_label)["label"]
@@ -562,9 +822,9 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
                         new_sku = models.SkuMaster(**payload)
                         db.add(new_sku)
                         sku_id_map[s_data.sku_code] = new_sku
-                    
+
                     db.flush() # Ensure it's valid for this nested transaction
-                
+
                 success_count += 1
             except Exception as e:
                 # Rollback of the nested transaction happens automatically by 'with db.begin_nested()'
@@ -593,7 +853,7 @@ def bulk_import_skus(data: schemas.BulkImportRequest, db: Session = Depends(get_
 @app.post("/api/sales/bulk-import")
 def bulk_import_sales(data: schemas.BulkSalesImportRequest, db: Session = Depends(get_db)):
     import logging
-    
+
     logger = logging.getLogger("sales_import")
     if not logger.handlers:
         sh = logging.StreamHandler()
@@ -602,7 +862,7 @@ def bulk_import_sales(data: schemas.BulkSalesImportRequest, db: Session = Depend
         logger.setLevel(logging.INFO)
 
     logger.info(f"Sales Bulk Import: Starting for {len(data.orders)} rows")
-    
+
     def safe_label(val):
         if val is None: return ""
         return str(val).strip()
@@ -619,7 +879,7 @@ def bulk_import_sales(data: schemas.BulkSalesImportRequest, db: Session = Depend
             ).all()
             for r in existing:
                 platform_map[r.label.lower()] = r.id
-            
+
             for l in unique_platforms:
                 if l.lower() not in platform_map:
                     slug = re.sub(r'[^a-z0-9]+', '_', l.lower()).strip('_')
@@ -636,11 +896,11 @@ def bulk_import_sales(data: schemas.BulkSalesImportRequest, db: Session = Depend
         # 2. Resolve SKUs
         unique_sku_codes = set(safe_label(o.sku_code) for o in data.orders if o.sku_code)
         unique_barcodes = set(safe_label(o.barcode) for o in data.orders if o.barcode)
-        
+
         sku_map = {} # code -> id
         if unique_sku_codes or unique_barcodes:
             skus = db.query(models.SkuMaster).filter(
-                (models.SkuMaster.sku_code.in_(list(unique_sku_codes))) | 
+                (models.SkuMaster.sku_code.in_(list(unique_sku_codes))) |
                 (models.SkuMaster.barcode.in_(list(unique_barcodes))),
                 models.SkuMaster.deletedAt == None
             ).all()
@@ -657,30 +917,30 @@ def bulk_import_sales(data: schemas.BulkSalesImportRequest, db: Session = Depend
             try:
                 with db.begin_nested():
                     payload = o_data.model_dump(exclude_unset=True)
-                    
+
                     # Resolve IDs
                     plt_id = platform_map.get(safe_label(o_data.platform_label).lower())
                     sku_id = sku_map.get(safe_label(o_data.sku_code or o_data.barcode))
-                    
+
                     if not plt_id:
                         raise ValueError(f"Platform '{o_data.platform_label}' resolution failed")
                     if not sku_id:
                         raise ValueError(f"SKU '{o_data.sku_code or o_data.barcode}' resolution failed")
-                        
+
                     payload["platform_reference_id"] = plt_id
                     payload["sku_master_id"] = sku_id
-                    
+
                     # Defaults
                     if payload.get("quantity") is None: payload["quantity"] = 1
                     if not payload.get("order_type"): payload["order_type"] = "ORDER"
-                    
+
                     # Cleanup labels
                     for k in ["platform_label", "sku_code", "barcode"]:
                         if k in payload: del payload[k]
 
                     # Deduplication (Platform + Ext Order ID + SKU Master ID)
                     ext_order_id = payload.get("external_order_id")
-                    
+
                     existing_order = db.query(models.SalesOrder).filter(
                         models.SalesOrder.platform_reference_id == plt_id,
                         models.SalesOrder.external_order_id == ext_order_id,
@@ -695,7 +955,7 @@ def bulk_import_sales(data: schemas.BulkSalesImportRequest, db: Session = Depend
                         # Create new
                         new_order = models.SalesOrder(**payload)
                         db.add(new_order)
-                    
+
                     db.flush()
                 success_count += 1
             except Exception as e:
@@ -728,20 +988,20 @@ def get_sales_orders(db: Session = Depends(get_db)):
 def patch_sku_platforms(id: int, patch_data: schemas.PlatformPatch, db: Session = Depends(get_db)):
     db_item = db.query(models.SkuMaster).filter(models.SkuMaster.id == id, models.SkuMaster.deletedAt == None).first()
     if not db_item: raise HTTPException(404, "Not Found")
-        
+
     current_arr = db_item.live_platform_reference_id or []
     if type(current_arr) != list: current_arr = []
-        
+
     if patch_data.action == "add":
         if patch_data.reference_id not in current_arr:
             current_arr.append(patch_data.reference_id)
     elif patch_data.action == "remove":
         if patch_data.reference_id in current_arr:
             current_arr.remove(patch_data.reference_id)
-            
+
     db_item.live_platform_reference_id = current_arr
     flag_modified(db_item, "live_platform_reference_id")
-    
+
     db.commit()
     db.refresh(db_item)
     return db_item
@@ -764,7 +1024,7 @@ def _generate_drive_url(brand_id: int, cat_id: int, subcat_id: int, sku_code: st
     drive = DriveService()
     if not drive.service:
         raise HTTPException(status_code=500, detail=f"Google Drive Error: {drive.last_error or 'Credentials not configured in backend.'}")
-    
+
     return drive.create_sku_folder_structure(
         brand=brand_label,
         category=cat_label,
@@ -786,7 +1046,7 @@ def generate_sku_catalog_url_preview(data: schemas.DriveFolderCreate, db: Sessio
         drive = DriveService()
         if not drive.service:
             raise HTTPException(status_code=500, detail=f"Google Drive Error: {drive.last_error or 'Credentials not configured in backend.'}")
-        
+
         url = drive.create_sku_folder_structure(
             brand=data.brand_name.strip(),
             category=data.category_name.strip(),
@@ -805,9 +1065,9 @@ def generate_sku_catalog_url_saved(id: int, db: Session = Depends(get_db)):
 
     try:
         folder_url = _generate_drive_url(
-            sku.brand_reference_id, 
-            sku.category_reference_id, 
-            sku.sub_category_reference_id, 
+            sku.brand_reference_id,
+            sku.category_reference_id,
+            sku.sub_category_reference_id,
             sku.sku_code,
             db
         )
@@ -823,15 +1083,15 @@ def trash_sku_catalog_folder(id: int, db: Session = Depends(get_db)):
     sku = db.query(models.SkuMaster).filter(models.SkuMaster.id == id).first()
     if not sku:
         raise HTTPException(status_code=404, detail="SKU not found")
-    
+
     if sku.catalog_url:
         drive_service = DriveService()
         drive_service.trash_folder(sku.catalog_url)
-        
+
         sku.catalog_url = None
         db.commit()
         db.refresh(sku)
-    
+
     return sku
 @app.post("/api/skus/export-images")
 async def export_sku_images(data: schemas.ImageExportRequest, db: Session = Depends(get_db)):
@@ -845,11 +1105,11 @@ async def export_sku_images(data: schemas.ImageExportRequest, db: Session = Depe
         return ref.label if ref else "Unknown"
 
     print(f"Export Images: Starting for {len(data.sku_ids)} SKUs")
-    
+
     # Memory buffer for ZIP
     zip_buffer = io.BytesIO()
     total_files_added = 0
-    
+
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED, False) as zip_file:
         for sku_id in data.sku_ids:
             sku = db.query(models.SkuMaster).filter(models.SkuMaster.id == sku_id).first()
@@ -902,16 +1162,16 @@ async def export_sku_images(data: schemas.ImageExportRequest, db: Session = Depe
                     folder_path = drive.sanitize_name(sku.sku_code or str(sku_id))
                 else:
                     folder_path = resolve_template(data.folder_template, context)
-                
+
                 # Determine filename
                 file_ext = f['name'].split('.')[-1] if '.' in f['name'] else 'bin'
                 filename = resolve_template(data.file_template, context, idx)
                 if not filename.endswith(f".{file_ext}"):
                     filename = f"{filename}.{file_ext}"
-                
+
                 # Ensure path is valid and relative (not absolute)
                 full_path = "/".join(p for p in f"{folder_path}/{filename}".split("/") if p)
-                
+
                 zip_file.writestr(full_path, content)
                 total_files_added += 1
 
@@ -919,7 +1179,7 @@ async def export_sku_images(data: schemas.ImageExportRequest, db: Session = Depe
 
     if total_files_added == 0:
         raise HTTPException(
-            status_code=404, 
+            status_code=404,
             detail="No images found for the selected products to export. Ensure catalog URLs are correct and folders contain files."
         )
 
@@ -931,7 +1191,7 @@ async def export_sku_images(data: schemas.ImageExportRequest, db: Session = Depe
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     return StreamingResponse(
-        iter_buffer(), 
+        iter_buffer(),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="Bloomerce_Images_{timestamp}.zip"'}
     )

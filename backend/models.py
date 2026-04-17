@@ -67,7 +67,7 @@ class SkuMaster(Base):
     metadata_json = Column(JSON, nullable=True)
     remark = Column(Text, nullable=True)
     bundle_type = Column(String(100), nullable=True)
-    product_component_group_code = Column(String(100), nullable=True)
+    product_component_group_code = Column(JSON, nullable=True)
     product_type = Column(String(100), nullable=True)
     pack_type = Column(String(100), nullable=True)
     tax_rule_code = Column(String(100), nullable=True)

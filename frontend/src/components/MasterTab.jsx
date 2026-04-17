@@ -121,7 +121,18 @@ const GROUPS = [
     cols: [
       { id: 'bundle_type', label: 'Bundle Type', width: 200 },
       { id: 'pack_type',   label: 'Pack Type',   width: 180 },
-      { id: 'product_component_group_code', label: 'Shared Component', width: 180, isMono: true },
+      { 
+        id: 'product_component_group_code', 
+        label: 'Shared Pools', 
+        width: 200, 
+        isMono: true,
+        valueFormatter: (p) => {
+          if (!p.value) return '-';
+          if (typeof p.value === 'string') return p.value;
+          const shared = Object.keys(p.value).filter(k => p.value[k]).map(k => k.toUpperCase());
+          return shared.length > 0 ? shared.join(', ') : 'None';
+        }
+      },
     ],
   },
   {
@@ -1425,6 +1436,17 @@ export default function MasterTab({ isMobile }) {
           statusOptions={refLists.STATUS}
           onClose={()=>setIsFormOpen(false)}
           onSaved={()=>{setIsFormOpen(false);loadAll();}}
+          onSwitchProduct={(id) => {
+            const next = skus.find(s => s.id === id);
+            if (next) {
+              // Briefly clear and reset to trigger a re-mount/reset of the form
+              setEditingSku(null);
+              setTimeout(() => {
+                setEditingSku(next);
+                setIsFormOpen(true);
+              }, 50);
+            }
+          }}
         />
       )}
       {isExportCenterOpen && (

@@ -4,10 +4,13 @@ import { skuApi, uploadApi, refApi } from '../api';
 import { Button } from '@/components/ui/button';
 import { cn, getDirectImageUrl } from '@/lib/utils';
 import {
-  X, Save, UploadCloud, RefreshCw, Trash2, Link, ArrowLeft,
+  X, Save, UploadCloud, RefreshCw, Trash2, Link, ArrowLeft, Search,
   Package, Tag, FileText, BarChart2, Layers, Info, StickyNote,
-  AlertCircle, FolderPlus, ExternalLink, BookmarkCheck, Check
+  AlertCircle, FolderPlus, ExternalLink, BookmarkCheck, Check, Copy,
+  Zap, Users, Compass, PlusCircle, Bookmark
 } from 'lucide-react';
+
+
 
 // ─── Auto-resizing textarea ───────────────────────────────────────
 function AutoTextarea({ name, value, onChange, placeholder, rows = 2, className }) {
@@ -35,7 +38,7 @@ function AutoTextarea({ name, value, onChange, placeholder, rows = 2, className 
 }
 
 // ─── Image uploader with URL support ──────────────────────────────
-function ImageBlock({ value, onChange }) {
+function ImageBlock({ value, onChange, onStatus }) {
   const [uploading, setUploading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const fileRef = useRef(null);
@@ -54,7 +57,7 @@ function ImageBlock({ value, onChange }) {
       onChange(res.url);
       setShowOptions(false);
     } catch {
-      alert('Upload failed. Try again.');
+      onStatus?.('Upload failed. Try again.', 'error');
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -162,7 +165,7 @@ function ImageBlock({ value, onChange }) {
                        />
                     </div>
                     <p className="text-[10px] text-[var(--color-muted-foreground)] leading-relaxed italic opacity-70">
-                      Paste your Google Drive link above. We'll automatically convert it into a direct stream. 
+                      Paste your Google Drive link above. We'll automatically convert it into a direct stream.
                       <span className="text-[var(--color-primary)] font-bold ml-1">Note: Ensure the file is shared as "Anyone with the link".</span>
                     </p>
                  </div>
@@ -217,7 +220,9 @@ const TABS = [
   { id: 'pricing',        label: 'Pricing & Specs',  icon: BarChart2 },
   { id: 'bundling',       label: 'Product & Bundle', icon: Layers },
   { id: 'tax',            label: 'Tax & Compliance', icon: Info },
+  { id: 'components',     label: 'Shared Pools',     icon: BookmarkCheck },
 ];
+
 
 const TAB_FIELDS = {
   identity:       ['product_name', 'sku_code', 'brand_reference_id', 'product_component_group_code', 'primary_image_url'],
@@ -226,7 +231,9 @@ const TAB_FIELDS = {
   pricing:        ['mrp', 'purchase_cost', 'net_quantity', 'net_quantity_unit_reference_id', 'size_reference_id', 'color', 'raw_product_size', 'package_size', 'package_weight', 'raw_product_weight', 'finished_product_weight'],
   bundling:       ['bundle_type', 'pack_type'],
   tax:            ['tax_rule_code', 'tax_percent'],
+  components:     ['product_component_group_code'],
 };
+
 
 function getTabsWithErrors(errors) {
   const errorFields = new Set(Object.keys(errors).filter(k => errors[k]));
@@ -239,7 +246,7 @@ function getTabsWithErrors(errors) {
 
 // ─── Empty form state ─────────────────────────────────────────────
 const EMPTY = {
-  product_name: '', sku_code: '', barcode: '', product_component_group_code: '',
+  product_name: '', sku_code: '', barcode: '', product_component_group_code: [],
   remark: '', primary_image_url: '', brand_reference_id: null,
   description: '', key_feature: '', caution: '', product_care: '', how_to_use: '',
   ingredients: '', key_ingredients: '', seo_keywords: '', catalog_url: '',
@@ -265,12 +272,43 @@ const sanitizeFolderName = (name) => {
     .replace(/\s+/g, "_");
 };
 
+// Safely parse the component group mapping from string/null into an array of {type, id}
+const parsePoolMapping = (val) => {
+  if (!val) return [];
+  let parsed = val;
+  if (typeof val === 'string') {
+    try {
+      parsed = JSON.parse(val);
+    } catch (e) {
+      console.warn("Failed to parse pool mapping:", e);
+      return [];
+    }
+  }
+
+  if (Array.isArray(parsed)) return parsed;
+  if (typeof parsed === 'object' && parsed !== null) {
+    // Lazy migration from old object format
+    return Object.entries(parsed).map(([type, id]) => ({ type, id }));
+  }
+  return [];
+};
+
 // ─── Persistence Helpers ──────────────────────────────────────────
 const getDraftKey = (id) => id ? `bloomerce_sku_edit_draft_${id}` : `bloomerce_sku_add_draft`;
 
 // ─── Main Form ────────────────────────────────────────────────────
-export default function SkuMasterForm({ initialData, statusOptions, onClose, onSaved }) {
+export default function SkuMasterForm({ initialData, statusOptions, onClose, onSaved, onSwitchProduct }) {
   const isEdit = Boolean(initialData?.id);
+  const [statusMessage, setStatusMessage] = useState(null); // { text: string, type: 'success' | 'error' }
+  const [pendingAction, setPendingAction] = useState(null); // { type: string, payload?: any }
+  const statusTimeoutRef = useRef(null);
+
+  const showStatus = (text, type = 'success') => {
+    if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+    setStatusMessage({ text, type });
+    statusTimeoutRef.current = setTimeout(() => setStatusMessage(null), 4000);
+  };
+
   const [form, setForm] = useState(() => {
     const draftKey = getDraftKey(initialData?.id);
     const savedDraft = localStorage.getItem(draftKey);
@@ -278,9 +316,10 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
     if (savedDraft) {
       try {
         const parsed = JSON.parse(savedDraft);
-        // Ensure the draft matches the current initialData (for Edit mode)
-        // If editing, we want to make sure we're not using a draft from a different product
-        // (the ID in the key handles this, but we're being extra safe)
+        // Ensure the component mapping is normalized even in drafts
+        if (parsed.product_component_group_code) {
+          parsed.product_component_group_code = parsePoolMapping(parsed.product_component_group_code);
+        }
         return { ...EMPTY, ...parsed };
       } catch (e) {
         console.error("Failed to parse draft:", e);
@@ -297,7 +336,10 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
     }
     const merged = { ...EMPTY };
     for (const key of Object.keys(EMPTY)) {
-      const v = initialData[key];
+      let v = initialData[key];
+      if (key === 'product_component_group_code') {
+        v = parsePoolMapping(v);
+      }
       merged[key] = v != null ? v : EMPTY[key];
     }
     return merged;
@@ -324,10 +366,14 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
     sku_code: ''
   });
 
-  const handleRegenerateClick = async (e) => {
+  const handleRegenerateClick = async (e, force = false) => {
     e?.stopPropagation();
-    if (window.confirm("This will move the current Google Drive folder to trash and generate a new one based on current data. Are you sure?")) {
-      try {
+    if (!force) {
+      setPendingAction({ type: 'regenerate' });
+      return;
+    }
+    setPendingAction(null);
+    try {
         console.log("Drive Flow: Regenerate requested", { sku: form.sku_code });
         setGeneratingUrl(true);
         // 1. Trash the old one on the server
@@ -340,14 +386,122 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
         setShowDrivePreview(true);
       } catch (err) {
         console.error("Drive Flow Error (Regenerate):", err);
-        alert("Failed to trash folder: " + (err.response?.data?.detail || err.message));
+        showStatus("Failed to trash folder: " + (err.response?.data?.detail || err.message), 'error');
       } finally {
         setGeneratingUrl(false);
       }
+  };
+
+
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [linkingType, setLinkingType] = useState(null); // 'raw', 'package', etc.
+  const [poolInfo, setPoolInfo] = useState([]); // Flat array of related SKUs: [{ id, product_name, sku_code, product_component_group_code, catalog_url }]
+  const [poolDiscovery, setPoolDiscovery] = useState({}); // { raw: [{id, product_name, sku_code, pool_id}], ... }
+  const [scanningTypes, setScanningTypes] = useState(new Set());
+
+  const fetchPoolInfo = async () => {
+    if (!initialData?.id) return;
+    try {
+      const res = await skuApi.getPoolInfo(initialData.id);
+      setPoolInfo(res);
+    } catch (err) {
+      console.error("Failed to fetch pool info:", err);
+    }
+  };
+
+  const fetchPoolDiscovery = async (type = null) => {
+    if (!initialData?.id) return;
+    if (type) setScanningTypes(prev => new Set(prev).add(type));
+    try {
+      const res = await skuApi.getPoolDiscovery(initialData.id, type);
+      setPoolDiscovery(prev => ({
+        ...prev,
+        ...res
+      }));
+    } catch (err) {
+      console.error("Failed to fetch pool discovery:", err);
+    } finally {
+      if (type) setScanningTypes(prev => {
+        const next = new Set(prev);
+        next.delete(type);
+        return next;
+      });
+    }
+  };
+
+  useEffect(() => {
+    fetchPoolInfo();
+    // fetchPoolDiscovery(); // Disabled auto-discovery per optimization plan
+  }, [initialData?.id, form.product_component_group_code]);
+
+  useEffect(() => {
+    if (searchQuery.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const delay = setTimeout(async () => {
+      try {
+        const res = await skuApi.search(searchQuery);
+        if (Array.isArray(res)) {
+          setSearchResults(res.filter(sku => sku.id !== initialData?.id));
+        } else {
+          setSearchResults([]);
+        }
+      } catch (err) {
+        console.error("Search failed:", err);
+        setSearchResults([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(delay);
+  }, [searchQuery, initialData?.id]);
+
+  const handleLinkComponent = async (targetSkuId) => {
+    if (!initialData?.id || !linkingType) return;
+    setSaving(true);
+    try {
+      const res = await skuApi.linkComponent(initialData.id, targetSkuId, linkingType);
+      // Refresh form data to show new mapping
+      const updatedSku = await skuApi.getById(initialData.id);
+      setForm(p => ({ ...p, product_component_group_code: parsePoolMapping(updatedSku.product_component_group_code) }));
+      setLinkingType(null);
+      setSearchQuery('');
+      await fetchPoolInfo();
+      await fetchPoolDiscovery();
+      showStatus("Component linked successfully!");
+    } catch (err) {
+      showStatus(`Linking failed: ${err.response?.data?.detail || err.message}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUnlinkComponent = async (type, force = false) => {
+    if (!initialData?.id) return;
+    if (!force) {
+      setPendingAction({ type: 'unlink', payload: type });
+      return;
+    }
+    setPendingAction(null);
+    setSaving(true);
+    try {
+      await skuApi.unlinkComponent(initialData.id, type);
+      const updatedSku = await skuApi.getById(initialData.id);
+      setForm(p => ({ ...p, product_component_group_code: parsePoolMapping(updatedSku.product_component_group_code) }));
+      await fetchPoolInfo();
+      await fetchPoolDiscovery();
+      showStatus("Component unlinked.");
+    } catch (err) {
+      showStatus(`Unlinking failed: ${err.response?.data?.detail || err.message}`, 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
   // Pre-populate driveDraft labels when editing existing product
+
   useEffect(() => {
     if (initialData?.id) {
       // Fetch labels for current references
@@ -443,14 +597,14 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
       const updatedUrl = res.catalog_url;
       set('catalog_url', updatedUrl);
       setShowDrivePreview(false);
-      
+
       // We no longer auto-save and close the form here.
       // This allows the user to continue editing other fields before clicking the main "Save" button.
 
     } catch (err) {
       console.error("Drive Flow Error (Create):", err);
       const msg = err.response?.data?.detail || err.message || "Unknown error";
-      alert(`Failed to create Google Drive folder: ${msg}`);
+      showStatus(`Failed to create Google Drive folder: ${msg}`, 'error');
     } finally {
       setGeneratingUrl(false);
     }
@@ -477,14 +631,14 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
     return Object.keys(EMPTY).some(k => {
       let a = form[k];
       let b = savedSnapshot.current[k];
-      
+
       // Normalize values for comparison
       const normalize = (val) => {
         if (val === '' || val === null || val === undefined) return null;
         // Optimization: ensure numeric fields are compared strictly as strings to avoid scale issues (e.g. 499 vs 499.0)
         return String(val).trim();
       };
-      
+
       return normalize(a) !== normalize(b);
     });
   }, [form]);
@@ -567,7 +721,7 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
       savedSnapshot.current = { ...form };
       onSaved();
     } catch (err) {
-      alert(`Save failed: ${err.response?.data?.detail || err.message}`);
+      showStatus(`Save failed: ${err.response?.data?.detail || err.message}`, 'error');
     } finally {
       setSaving(false);
     }
@@ -576,6 +730,7 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
   const handleSubmit = (e) => { e.preventDefault(); saveForm(); };
   const title = isEdit ? 'Edit Product' : 'Add New Product';
   const tabsWithErrors = getTabsWithErrors(errors);
+
 
   return (
     <>
@@ -683,6 +838,26 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
           </div>
         )}
 
+        {/* ── Status Messages (Inline Toast) ─────────────────── */}
+        {statusMessage && (
+          <div className="absolute top-[60px] left-0 right-0 z-[120] px-5 animate-in slide-in-from-top-4 duration-300">
+            <div className={cn(
+              "flex items-center gap-3 p-3 rounded-2xl shadow-xl border backdrop-blur-md",
+              statusMessage.type === 'error'
+                ? "bg-rose-500/95 border-rose-400 text-white shadow-rose-500/20"
+                : "bg-emerald-500/95 border-emerald-400 text-white shadow-emerald-500/20"
+            )}>
+              <div className="shrink-0 w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
+                {statusMessage.type === 'error' ? <AlertCircle size={18} /> : <Check size={18} />}
+              </div>
+              <p className="text-xs font-bold leading-tight flex-1">{statusMessage.text}</p>
+              <button onClick={() => setStatusMessage(null)} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── Tab bar ─────────────────────────────────────────── */}
         <div className="flex items-center gap-0 border-b border-[var(--color-border)] px-2 flex-shrink-0 overflow-x-auto">
           {TABS.map(t => {
@@ -719,7 +894,7 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
               {/* IDENTITY */}
               {activeTab === 'identity' && (
                 <>
-                  <ImageBlock value={form.primary_image_url} onChange={(val) => set('primary_image_url', val)} />
+                  <ImageBlock onStatus={showStatus} value={form.primary_image_url} onChange={(val) => set('primary_image_url', val)} />
 
                   <Field label="Product Name" required error={errors.product_name}>
                     <input type="text" name="product_name" value={form.product_name} onChange={handleChange}
@@ -741,11 +916,45 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
                           setDriveDraft(prev => ({ ...prev, brand_name: sanitizeFolderName(label) }));
                         }} placeholder="Select or add brand…" />
                     </Field>
-                    <Field label="Component Group Code" hint="For bundle / kit tracking">
-                      <input type="text" name="product_component_group_code" value={form.product_component_group_code}
-                        onChange={handleChange} className={cn(inputCls(false), "font-mono")} placeholder="e.g. GRP-001" />
-                    </Field>
                   </FieldRow>
+
+                  {/* COMPONENT SYNC STATUS (Identity View) */}
+                  {(Array.isArray(form.product_component_group_code) ? form.product_component_group_code : []).length > 0 && (
+                    <div className="mt-4 p-4 rounded-2xl bg-indigo-50/50 border border-indigo-100 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-indigo-100/50 text-indigo-600 flex items-center justify-center">
+                            <BookmarkCheck size={20} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-slate-800 uppercase tracking-tight">Syndicated Infrastructure</p>
+                            <p className="text-[10px] text-indigo-600 font-medium">
+                              {(Array.isArray(form.product_component_group_code) ? form.product_component_group_code : []).length} component pools active
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setActiveTab('components')}
+                          className="text-[10px] font-bold text-indigo-600 hover:bg-indigo-100 border-none bg-transparent"
+                        >
+                          View Details
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-2 border-t border-indigo-100/50">
+                        {(Array.isArray(form.product_component_group_code) ? form.product_component_group_code : []).map((entry, idx) => (
+                          <div key={idx} className="flex flex-col">
+                            <span className="text-[8px] font-bold text-slate-400 uppercase px-1">{entry.type}</span>
+                            <span className="px-2 py-0.5 bg-white text-indigo-600 rounded-lg text-[10px] font-mono font-bold border border-indigo-100">
+                              {typeof entry.id === 'string' ? entry.id.split('_')[0] : '...'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -773,6 +982,7 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
                           set('sub_category_reference_id', id);
                           setDriveDraft(prev => ({ ...prev, sub_category_name: sanitizeFolderName(label) }));
                         }} placeholder="Select or add sub-category…" />
+                      {/* label info removed */}
                     </Field>
                   </FieldRow>
                   <Field label="Product Status">
@@ -817,16 +1027,35 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
                                     <span className="sm:hidden text-xs font-bold uppercase tracking-wider">Open</span>
                                   </a>
 
-                                  <button
-                                    type="button"
-                                    onClick={handleRegenerateClick}
-                                    disabled={generatingUrl}
-                                    className="flex flex-1 sm:flex-none items-center justify-center w-auto sm:w-10 h-10 px-4 sm:px-0 rounded-xl border border-amber-200 text-amber-600 hover:bg-amber-50 active:scale-95 transition-all shrink-0 gap-2"
-                                    title="Re-generate Google Drive Folder"
-                                  >
-                                    <RefreshCw size={15} className={generatingUrl ? "animate-spin" : ""} />
-                                    <span className="sm:hidden text-xs font-bold uppercase tracking-wider">Reset</span>
-                                  </button>
+                                  {pendingAction?.type === 'regenerate' ? (
+                                    <div className="flex items-center gap-1.5 animate-in zoom-in-95 duration-200">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleRegenerateClick(e, true)}
+                                        className="h-10 px-4 rounded-xl bg-amber-500 text-white hover:bg-amber-600 transition-all border-none text-[10px] font-black uppercase shadow-md shadow-amber-500/20"
+                                      >
+                                        Confirm Re-gen
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setPendingAction(null)}
+                                        className="h-10 px-4 rounded-xl bg-white border border-amber-200 text-amber-600 hover:bg-amber-50 transition-all text-[10px] font-bold uppercase"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={handleRegenerateClick}
+                                      disabled={generatingUrl}
+                                      className="flex flex-1 sm:flex-none items-center justify-center w-auto sm:w-10 h-10 px-4 sm:px-0 rounded-xl border border-amber-200 text-amber-600 hover:bg-amber-50 active:scale-95 transition-all shrink-0 gap-2"
+                                      title="Re-generate Google Drive Folder"
+                                    >
+                                      <RefreshCw size={15} className={generatingUrl ? "animate-spin" : ""} />
+                                      <span className="sm:hidden text-xs font-bold uppercase tracking-wider">Reset</span>
+                                    </button>
+                                  )}
                                 </>
                               ) : (
                                 <button
@@ -1005,12 +1234,14 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
                     <Field label="Raw Product Size">
                       <input type="text" name="raw_product_size" value={form.raw_product_size} onChange={handleChange}
                         className={inputCls(false)} placeholder="e.g. 15x5x5 cm" />
+                      {/* raw info removed */}
                     </Field>
                   </FieldRow>
                   <FieldRow>
                     <Field label="Package Size">
                       <input type="text" name="package_size" value={form.package_size} onChange={handleChange}
                         className={inputCls(false)} placeholder="e.g. 16x6x6 cm" />
+                      {/* package info removed */}
                     </Field>
                     <Field label="Package Weight (g)">
                       <input type="number" name="package_weight" value={form.package_weight} onChange={handleChange}
@@ -1058,9 +1289,247 @@ export default function SkuMasterForm({ initialData, statusOptions, onClose, onS
                 </FieldRow>
               )}
 
+              {/* SHARED POOLS */}
+              {activeTab === 'components' && (
+                <div className="flex flex-col gap-6">
+                  {!initialData?.id ? (
+                    <div className="p-8 border-2 border-dashed border-[var(--color-border)] rounded-3xl flex flex-col items-center justify-center text-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                        <AlertCircle size={24} />
+                      </div>
+                      <div>
+                        <p className="font-bold text-[var(--color-foreground)]">Create Product First</p>
+                        <p className="text-xs text-[var(--color-muted-foreground)] mt-0.5">Linking to shared component pools is only available for existing products.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex flex-col gap-6">
+
+                        <div className="bg-slate-50/50 rounded-2xl border border-slate-200 divide-y divide-slate-100 overflow-hidden shadow-sm">
+                        {['raw', 'package', 'label', 'sticker', 'monocarton'].map(type => {
+                          const mapping = form?.product_component_group_code || [];
+                          const entry = Array.isArray(mapping) ? mapping.find(m => m.type === type) : null;
+                          const groupCode = entry?.id;
+                          const hasDiscovery = (poolDiscovery?.[type] || []).length > 0;
+                          const peers = (Array.isArray(poolInfo) ? poolInfo : []).filter(peer => {
+                            const peerCodes = parsePoolMapping(peer.product_component_group_code);
+                            return peerCodes.some(c => c.type === type && c.id === groupCode);
+                          });
+
+                          return (
+                            <div key={type} className="bg-white hover:bg-slate-50/30 transition-all">
+                              {/* --- COMPACT ROW HEADER --- */}
+                              <div className="p-4 flex items-center gap-4">
+                                <div className={cn(
+                                  "w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm border",
+                                  groupCode ? "bg-indigo-600 border-indigo-500 text-white" : "bg-white border-slate-200 text-slate-400"
+                                )}>
+                                  {type === 'raw' && <Layers size={16} />}
+                                  {type === 'package' && <Package size={16} />}
+                                  {type === 'label' && <Tag size={16} />}
+                                  {type === 'monocarton' && <FileText size={16} />}
+                                  {type === 'sticker' && <Bookmark size={16} />}
+                                </div>
+
+                                <div className="flex-1 min-w-0 pr-4">
+                                  <div className="flex items-center gap-2 mb-0.5">
+                                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-tight">{type}</h4>
+                                    {groupCode ? (
+                                      <span className="text-[8px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded uppercase tracking-widest">Shared Pool</span>
+                                    ) : (
+                                      <span className="text-[8px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded uppercase tracking-widest">Standalone</span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] font-mono text-slate-500 truncate max-w-[200px]">
+                                    {groupCode ? groupCode : `Unique ID: ${form.sku_code || 'TBD'}_${type}`}
+                                  </p>
+                                </div>
+
+                                {/* --- INLINE ACTIONS --- */}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {!groupCode && !linkingType && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        disabled={scanningTypes.has(type)}
+                                        onClick={() => fetchPoolDiscovery(type)}
+                                        className="h-8 px-3 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all border-none flex items-center gap-1.5"
+                                      >
+                                        {scanningTypes.has(type) ? <RefreshCw size={12} className="animate-spin" /> : <Compass size={12} />}
+                                        <span className="text-[10px] font-bold uppercase">{scanningTypes.has(type) ? 'Scanning...' : 'Scan Synergy'}</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => { setLinkingType(type); setSearchQuery(""); setSearchResults([]); }}
+                                        className="h-8 px-3 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-all border-none flex items-center gap-1.5"
+                                      >
+                                        <PlusCircle size={12} />
+                                        <span className="text-[10px] font-bold uppercase">Connect</span>
+                                      </button>
+                                    </>
+                                  )}
+
+                                  {groupCode && !linkingType && (
+                                    <>
+                                      {pendingAction?.type === 'unlink' && pendingAction?.payload === type ? (
+                                        <div className="flex items-center gap-1.5 animate-in zoom-in-95 duration-200">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUnlinkComponent(type, true)}
+                                            className="h-8 px-3 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-all border-none text-[10px] font-black uppercase shadow-sm"
+                                          >
+                                            Confirm
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setPendingAction(null)}
+                                            className="h-8 px-3 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all border-none text-[10px] font-bold uppercase"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => { setLinkingType(type); setSearchQuery(""); setSearchResults([]); }}
+                                            className="h-8 px-3 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all border-none flex items-center gap-1.5"
+                                            title="Switch Pool"
+                                          >
+                                            <RefreshCw size={12} />
+                                            <span className="text-[10px] font-bold uppercase">Switch</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUnlinkComponent(type)}
+                                            className="h-8 px-3 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-all border-none flex items-center gap-1.5"
+                                            title="Disconnect"
+                                          >
+                                            <Trash2 size={12} />
+                                            <span className="text-[10px] font-bold uppercase">Unlink</span>
+                                          </button>
+                                        </>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              {/* --- EXPANDED DETAILS (PEERS OR SUGGESTIONS) --- */}
+                              {(groupCode || hasDiscovery || linkingType === type) && (
+                                <div className="px-4 pb-4 border-t border-slate-50 pt-3 bg-slate-50/30">
+                                  {/* Suggestions List */}
+                                  {hasDiscovery && !groupCode && (
+                                    <div className="mb-3">
+                                      <p className="text-[9px] font-black text-indigo-600/60 uppercase mb-2 ml-1 tracking-widest">Synergy Matches Found:</p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {(poolDiscovery?.[type] || []).map(suggest => (
+                                          <div key={suggest.id} className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-sm flex items-center gap-3">
+                                            <div className="min-w-0">
+                                              <p className="text-[10px] font-black text-slate-800 truncate uppercase tracking-tight leading-none mb-0.5">{suggest.product_name}</p>
+                                              <p className="text-[9px] font-mono text-indigo-50 leading-none">{suggest.sku_code || 'N/A'}</p>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleLinkComponent(suggest.id)}
+                                              className="h-6 px-2.5 rounded-lg bg-indigo-600 text-white text-[9px] font-bold hover:bg-indigo-700 transition-all border-none uppercase shadow-sm"
+                                            >
+                                              Join
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Peers List */}
+                                  {groupCode && peers.length > 0 && (
+                                    <div>
+                                      <p className="text-[9px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Connected Ecosystem ({peers.length}):</p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {peers.map(peer => (
+                                          <div key={peer.id} className="inline-flex items-center gap-2 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg shadow-sm">
+                                            <div className="flex flex-col min-w-0">
+                                              <p className="text-[9px] font-bold text-slate-700 truncate max-w-[120px] uppercase leading-none">{peer.product_name || 'Unnamed'}</p>
+                                              <p className="text-[8px] font-mono text-slate-400 leading-none mt-1 uppercase tracking-tighter">{peer.sku_code || 'No SKU'}</p>
+                                            </div>
+                                            <span className="text-slate-200 shrink-0 ml-1">|</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => onSwitchProduct?.(peer.id)}
+                                              className="text-[9px] font-black text-indigo-600 hover:text-indigo-800 bg-transparent border-none uppercase tracking-tighter shrink-0"
+                                            >
+                                              View
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* --- Search Overlay --- */}
+                                  {linkingType === type && (
+                                    <div className="animate-in fade-in slide-in-from-top-1 duration-200 mt-2">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <h5 className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Establish Connection</h5>
+                                        <button onClick={() => setLinkingType(null)} className="p-1 text-slate-400 hover:text-slate-600 bg-transparent border-none">
+                                          <X size={12} />
+                                        </button>
+                                      </div>
+                                      <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                        <input
+                                          autoFocus
+                                          type="text"
+                                          className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs placeholder:text-slate-300 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-50 outline-none transition-all"
+                                          placeholder="Type SKU code..."
+                                          value={searchQuery}
+                                          onChange={(e) => setSearchQuery(e.target.value)}
+                                        />
+
+                                        {(searchResults || []).length > 0 && (
+                                          <div className="mt-2 max-h-[150px] overflow-y-auto bg-white rounded-lg border border-slate-100 divide-y divide-slate-50 shadow-xl overflow-hidden z-[100]">
+                                            {(searchResults || []).map(sku => (
+                                              <button
+                                                key={sku.id}
+                                                type="button"
+                                                onClick={() => handleLinkComponent(sku.id)}
+                                                className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center justify-between group border-none bg-transparent"
+                                              >
+                                                <div className="min-w-0 pr-4">
+                                                  <p className="text-[10px] font-bold text-slate-800 truncate uppercase">{sku.product_name}</p>
+                                                  <p className="text-[9px] text-slate-400 font-mono">{sku.sku_code || 'N/A'}</p>
+                                                </div>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                        <p className="text-[10px] uppercase font-black tracking-widest text-[var(--color-muted-foreground)] mb-2">How it works</p>
+                        <ul className="text-[11px] text-[var(--color-muted-foreground)] space-y-2 list-disc pl-4">
+                          <li>Linking a component creates a shared <strong>Group ID</strong> based on the target product's specs.</li>
+                          <li>Example: <code>{`{uuid}_{color}_{subcategory}_{size}_raw`}</code></li>
+                          <li>Any updates to the shared pool ID will propagate to all linked products.</li>
+                          <li>You can un-link a component at any time to give it a unique ID or move it to another pool.</li>
+                        </ul>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
             </div>
           </form>
         </div>
+
 
         {/* ── Sticky footer ────────────────────────────────────── */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-muted)] flex-shrink-0">

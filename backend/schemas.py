@@ -62,7 +62,7 @@ class SkuMasterBase(BaseModel):
     metadata_json: Optional[Union[Dict[str, Any], List[Any]]] = None
     remark: Optional[str] = None
     bundle_type: Optional[Union[int, str]] = None
-    product_component_group_code: Optional[str] = None
+    product_component_group_code: Optional[Union[Dict[str, Any], List[Any], str]] = None
     product_type: Optional[str] = None
     pack_type: Optional[Union[int, str]] = None
     tax_rule_code: Optional[str] = None
